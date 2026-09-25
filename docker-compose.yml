@@ -1,0 +1,120 @@
+# تاریکی روشن شد — v3.1.0 — NOTIF + SMS + TELEGRAM + fallback + throttling — .env شامل همه — docker-compose env_file .env را می‌خواند — امن
+services:
+  proxy:
+    image: nginx:alpine
+    container_name: wallet-proxy
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+    networks:
+      - wallet-network
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    container_name: wallet-web
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - API_URL=${API_URL:-http://api:3001}
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - wallet-network
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    container_name: wallet-api
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3001
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY}
+      - APP_URL=${APP_URL}
+      - SMS_PROVIDER=${SMS_PROVIDER:-mock}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-mock}
+      - PUSH_PROVIDER=${PUSH_PROVIDER:-mock}
+      - TELEPHONY_PROVIDER=${TELEPHONY_PROVIDER:-mock}
+      - AI_PROVIDER=${AI_PROVIDER:-mock}
+      - AI_ROUTING_MODE=${AI_ROUTING_MODE:-iranian_gateway}
+      - AI_BASE_URL=${AI_BASE_URL}
+      - AI_API_KEY=${AI_API_KEY}
+      - AI_EMBEDDING_DIMENSION=${AI_EMBEDDING_DIMENSION:-1024}
+      - STORAGE_DRIVER=${STORAGE_DRIVER:-local}
+      - LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/uploads}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - uploads:/app/uploads
+      - ./runtime:/app/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - wallet-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wallet-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-wallet}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-wallet}
+      - POSTGRES_DB=${POSTGRES_DB:-wallet}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+    networks:
+      - wallet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wallet} -d ${POSTGRES_DB:-wallet}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: wallet-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - wallet-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+
+networks:
+  wallet-network:
+    driver: bridge

@@ -1,0 +1,17 @@
+{
+  "name": "wallet",
+  "version": "1.0.0",
+  "description": "Universal Wallet OS — double-entry ledger — BigInt + RLS + immutability + SELECT FOR UPDATE — 39/39 0 تاریکی — بی‌ادعا سقف",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node apps/api/src/main.js",
+    "dev": "vitest run --watch"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  }
+}

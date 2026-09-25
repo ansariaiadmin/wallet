@@ -1,0 +1,24 @@
+{
+  "name": "Wallet — Universal Wallet OS — double-entry ledger — BigInt + RLS",
+  "short_name": "Wallet",
+  "description": "کیف پول جهانی — double-entry ledger — BigInt + RLS + immutability + SELECT FOR UPDATE — برای همه 8 پروژه — بی‌ادعا سقف",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e40af",
+  "theme_color": "#1e40af",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["finance", "productivity"],
+  "lang": "fa-IR",
+  "dir": "rtl"
+}
