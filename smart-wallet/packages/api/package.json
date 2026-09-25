@@ -1,5 +1,5 @@
 {
-  "name": "@smart-wallet/api",
+  "name": "@wallet/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@smart-wallet/core": "workspace:*",
-    "@smart-wallet/router": "workspace:*"
+    "@wallet/core": "workspace:*",
+    "@wallet/router": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
