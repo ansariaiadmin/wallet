@@ -1,0 +1,13 @@
+# dependencies / build output
+node_modules/
+dist/
+coverage/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# logs & os noise
+*.log
+.DS_Store
