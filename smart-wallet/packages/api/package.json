@@ -13,9 +13,14 @@
   },
   "dependencies": {
     "@wallet/core": "workspace:*",
-    "@wallet/router": "workspace:*"
+    "@wallet/router": "workspace:*",
+    "hono": "4.13.9"
+  },
+  "peerDependencies": {
+    "@hono/node-server": "^1.0.0"
   },
   "devDependencies": {
+    "@hono/node-server": "1.19.17",
     "@types/node": "^22.20.4",
     "typescript": "^5.9.3",
     "vitest": "^5.0.2"

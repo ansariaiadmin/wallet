@@ -7,11 +7,12 @@ const fromHere = (relativePath: string): string =>
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
   },
   resolve: {
     alias: {
       '@core': fromHere('../core/src'),
+      '@chains': fromHere('../chains/src'),
       '@router': fromHere('../router/src'),
       '@api': fromHere('../api/src'),
       '@sdk': fromHere('../sdk/src'),

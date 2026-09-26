@@ -2,6 +2,24 @@ import type { Command, CommandResult } from '@core/commands';
 import type { LedgerDirection, LedgerPosting } from '@core/types';
 import { add, compare, money, subtract, type Money } from '@core/money';
 import { Router } from '@router/router';
+import { Hono } from 'hono';
+import {
+  mockBinanceProvider,
+  mockChainalysisProvider,
+  mockCoinGeckoProvider,
+  mockKrakenProvider,
+  mockOfacProvider,
+  mockTokenWatchProvider,
+  PriceOracle,
+  RiskChecker,
+} from '@wallet/core';
+import { mockEvmAdapter, mockSolanaAdapter, mockTronAdapter, SwapRouter } from '@wallet/router';
+import { errorResponse } from './errors';
+import { healthRoutes } from './routes/health';
+import { priceRoutes } from './routes/price';
+import { quoteRoutes } from './routes/quote';
+import { riskRoutes } from './routes/risk';
+import { txRoutes } from './routes/tx';
 
 interface Ctx {
   readonly command: Command;
@@ -51,7 +69,6 @@ export class WalletApp {
     }
 
     const next = direction === 'credit' ? add(current, amount) : subtract(current, amount);
-
     this.balances.set(walletId, next);
     this.postings.push({
       id: this.nextId('posting'),
@@ -69,4 +86,50 @@ export class WalletApp {
     this.sequence += 1;
     return `${prefix}_${this.sequence.toString().padStart(6, '0')}`;
   }
+}
+
+/** The deterministic mock providers every route is wired with. */
+function createOracle(): PriceOracle {
+  return new PriceOracle([mockCoinGeckoProvider, mockBinanceProvider, mockKrakenProvider]);
+}
+
+function createRiskChecker(): RiskChecker {
+  return new RiskChecker([mockOfacProvider, mockChainalysisProvider, mockTokenWatchProvider]);
+}
+
+function createSwapRouter(): SwapRouter {
+  return new SwapRouter([mockEvmAdapter, mockSolanaAdapter, mockTronAdapter]);
+}
+
+/**
+ * Builds the REST application.
+ *
+ * Every route lives under `/api/v1` and every dependency is constructed here,
+ * so the factory returns a fresh, fully wired app with no module level state
+ * and no listening socket: the caller decides how to serve it (`serve()` from
+ * `@hono/node-server`, a worker, or `app.request()` in tests).
+ */
+export function createApp(): Hono {
+  const app = new Hono();
+
+  app.onError((error, c) => {
+    const { status, body } = errorResponse(error);
+    if (status === 500) {
+      // Logged for the operator, never sent to the client.
+      console.error('unhandled API error:', error);
+    }
+    return c.json(body, status);
+  });
+
+  app.notFound((c) =>
+    c.json({ error: `no route for ${c.req.method} ${c.req.path}`, code: 'NOT_FOUND' }, 404),
+  );
+
+  app.route('/api/v1', healthRoutes());
+  app.route('/api/v1', priceRoutes(createOracle()));
+  app.route('/api/v1', riskRoutes(createRiskChecker()));
+  app.route('/api/v1', quoteRoutes(createSwapRouter()));
+  app.route('/api/v1', txRoutes());
+
+  return app;
 }
