@@ -131,9 +131,15 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@wallet/chains':
+        specifier: workspace:*
+        version: link:../chains
       '@wallet/core':
         specifier: workspace:*
         version: link:../core
+      '@wallet/router':
+        specifier: workspace:*
+        version: link:../router
     devDependencies:
       '@types/node':
         specifier: ^22.20.4
