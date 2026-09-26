@@ -6,7 +6,6 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node"],
-
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -14,13 +13,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true,
-
     "esModuleInterop": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-
     "baseUrl": ".",
     "paths": {
       "@core": ["packages/core/src/index.ts"],
@@ -30,7 +27,9 @@
       "@api": ["packages/api/src/index.ts"],
       "@api/*": ["packages/api/src/*"],
       "@sdk": ["packages/sdk/src/index.ts"],
-      "@sdk/*": ["packages/sdk/src/*"]
+      "@sdk/*": ["packages/sdk/src/*"],
+      "@chains": ["packages/chains/src/index.ts"],
+      "@chains/*": ["packages/chains/src/*"]
     }
   }
 }

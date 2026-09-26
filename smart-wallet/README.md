@@ -10,6 +10,7 @@ smart-wallet/
 ├── packages/
 │   ├── core/     # domain primitives: money, ledger postings, commands, errors,
 │   │             # plus the keystore (BIP-39, BIP-32, SLIP-0010 ed25519, AES-256-GCM)
+│   ├── chains/   # multi-chain RPC layer: EVM (viem), Solana (web3.js), TRON (TronGrid)
 │   ├── router/   # typed route → handler registry
 │   ├── api/      # wallet application surface wired on top of core + router
 │   └── sdk/      # typed client over an injectable transport
