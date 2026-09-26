@@ -36,8 +36,10 @@ import {
   NETWORK_IS_TESTNET,
   isNetworkId,
 } from './networks';
+import { readTransactionStatus, recordBroadcast } from './tx-status';
 import type {
   BalanceResult,
+  BroadcastResult,
   BuildSignResult,
   ChainFamily,
   FeeEstimate,
@@ -45,6 +47,7 @@ import type {
   PriceSummary,
   QuoteSummary,
   RiskSummary,
+  TxStatusResult,
   WalletConfig,
   WalletCreateResult,
   WalletImportResult,
@@ -251,6 +254,73 @@ export class SmartWallet {
     } finally {
       unlocked.destroy();
     }
+  }
+
+  // ------------------------------------------------------------- broadcast
+
+  /**
+   * Broadcasts an already-signed transaction.
+   *
+   * The SDK only forwards what it is given: it never signs, never derives keys
+   * and never holds key material. The payload is re-encoded for the family —
+   * `0x` hex on EVM, base64 on Solana — because the connectors take strings.
+   *
+   * @throws SdkError UNSUPPORTED_NETWORK for a network the wallet cannot reach,
+   *   INVALID_INPUT for a payload that is not a non-empty byte array, and
+   *   BROADCAST_FAILED when the connector (or the encoding) refuses it.
+   */
+  async broadcast(network: NetworkId, signedTx: Uint8Array): Promise<BroadcastResult> {
+    this.requireNetwork(network);
+    const payload = toBroadcastPayload(NETWORK_FAMILY[network], signedTx);
+    const connector = this.connectorFor(network);
+
+    let txHash: string;
+    try {
+      txHash = (await connector.broadcast(payload)).txHash;
+    } catch (error) {
+      throw toSdkError(error, 'BROADCAST_FAILED');
+    }
+
+    const broadcastAt = Date.now();
+    // Remembered so a later status call can report it without a chain read.
+    recordBroadcast(network, txHash, broadcastAt);
+    return { txHash, network, broadcastAt };
+  }
+
+  /**
+   * Reads the status of a transaction.
+   *
+   * The shipped connectors cannot read a transaction back, so the answer comes
+   * from this process's own record of what it broadcast: `pending` for a known
+   * hash, `not_found` otherwise. A connector that implements
+   * `getTransactionStatus` answers instead, and its failures become
+   * `STATUS_FAILED`.
+   */
+  async getTxStatus(network: NetworkId, txHash: string): Promise<TxStatusResult> {
+    this.requireNetwork(network);
+    if (typeof txHash !== 'string' || txHash.trim() === '') {
+      throw new SdkError('INVALID_INPUT', 'txHash is required');
+    }
+    const connector = this.connectorFor(network);
+
+    let record: Awaited<ReturnType<typeof readTransactionStatus>>;
+    try {
+      record = await readTransactionStatus(connector, network, txHash);
+    } catch (error) {
+      throw toSdkError(error, 'STATUS_FAILED');
+    }
+
+    const checkedAt = Date.now();
+    if (record === undefined) {
+      return { txHash, network, status: 'not_found', confirmations: 0, checkedAt };
+    }
+    return {
+      txHash,
+      network,
+      status: record.status,
+      confirmations: record.confirmations,
+      checkedAt,
+    };
   }
 
   // ------------------------------------------------------------- price / risk
@@ -503,6 +573,34 @@ function toQuoteSummary(quote: SwapQuote): QuoteSummary {
     adapter: quote.aggregator,
     estimatedFee: quote.feeBps.toString(),
   };
+}
+
+/**
+ * Renders signed bytes in the encoding `family`'s connector expects.
+ *
+ * TRON is the exception: TronGrid broadcasts the signed transaction *object*
+ * as JSON, which cannot be derived from raw bytes here, so the call fails with
+ * a documented reason instead of guessing.
+ */
+function toBroadcastPayload(family: ChainFamily, signedTx: Uint8Array): string {
+  if (!(signedTx instanceof Uint8Array)) {
+    throw new SdkError('INVALID_INPUT', 'signedTx must be a Uint8Array');
+  }
+  if (signedTx.length === 0) {
+    throw new SdkError('INVALID_INPUT', 'signedTx is empty');
+  }
+  if (family === 'evm') {
+    return `0x${Buffer.from(signedTx).toString('hex')}`;
+  }
+  if (family === 'solana') {
+    return Buffer.from(signedTx).toString('base64');
+  }
+  throw new SdkError(
+    'BROADCAST_FAILED',
+    'TRON broadcast needs the signed transaction object as JSON (TronGrid REST), ' +
+      'which cannot be derived from raw bytes; sign with the TRON builder and ' +
+      'broadcast the object itself',
+  );
 }
 
 /** Renders a signed payload as `0x`-prefixed hex. */

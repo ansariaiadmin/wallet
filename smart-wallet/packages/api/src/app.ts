@@ -19,6 +19,7 @@ import { healthRoutes } from './routes/health';
 import { priceRoutes } from './routes/price';
 import { quoteRoutes } from './routes/quote';
 import { riskRoutes } from './routes/risk';
+import { broadcastRoutes, statusRoutes } from './routes/broadcast';
 import { txRoutes } from './routes/tx';
 
 interface Ctx {
@@ -102,16 +103,13 @@ function createSwapRouter(): SwapRouter {
 }
 
 /**
- * Builds the REST application.
+ * Wires the shared error mapping onto `app` and returns it.
  *
- * Every route lives under `/api/v1` and every dependency is constructed here,
- * so the factory returns a fresh, fully wired app with no module level state
- * and no listening socket: the caller decides how to serve it (`serve()` from
- * `@hono/node-server`, a worker, or `app.request()` in tests).
+ * Every failure — an {@link ApiError} a route raised, an upstream error from
+ * the core, router or chains packages, or anything unexpected — is rendered as
+ * the same JSON body, so a caller never sees a stack trace.
  */
-export function createApp(): Hono {
-  const app = new Hono();
-
+export function withErrorHandler(app: Hono): Hono {
   app.onError((error, c) => {
     const { status, body } = errorResponse(error);
     if (status === 500) {
@@ -120,6 +118,19 @@ export function createApp(): Hono {
     }
     return c.json(body, status);
   });
+  return app;
+}
+
+/**
+ * Builds the REST application.
+ *
+ * Every route lives under `/api/v1` and every dependency is constructed here,
+ * so the factory returns a fresh, fully wired app with no module level state
+ * and no listening socket: the caller decides how to serve it (`serve()` from
+ * `@hono/node-server`, a worker, or `app.request()` in tests).
+ */
+export function createApp(): Hono {
+  const app = withErrorHandler(new Hono());
 
   app.notFound((c) =>
     c.json({ error: `no route for ${c.req.method} ${c.req.path}`, code: 'NOT_FOUND' }, 404),
@@ -130,6 +141,8 @@ export function createApp(): Hono {
   app.route('/api/v1', riskRoutes(createRiskChecker()));
   app.route('/api/v1', quoteRoutes(createSwapRouter()));
   app.route('/api/v1', txRoutes());
+  app.route('/api/v1', broadcastRoutes());
+  app.route('/api/v1', statusRoutes());
 
   return app;
 }

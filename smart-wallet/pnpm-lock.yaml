@@ -29,6 +29,9 @@ importers:
 
   packages/api:
     dependencies:
+      '@wallet/chains':
+        specifier: workspace:*
+        version: link:../chains
       '@wallet/core':
         specifier: workspace:*
         version: link:../core

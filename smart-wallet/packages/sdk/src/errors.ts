@@ -8,7 +8,7 @@ import {
   RiskError,
   SignerError,
 } from '@wallet/core';
-import { ChainError } from '@wallet/chains';
+import { BroadcastError, ChainError } from '@wallet/chains';
 import { RouterError } from '@wallet/router';
 
 /**
@@ -60,6 +60,9 @@ export function toSdkError(error: unknown, fallbackCode = 'INTERNAL'): SdkError 
   }
   if (error instanceof BuilderError) {
     return new SdkError('BUILD_FAILED', error.message, { cause: error });
+  }
+  if (error instanceof BroadcastError) {
+    return new SdkError('BROADCAST_FAILED', error.message, { cause: error });
   }
   if (error instanceof ChainError) {
     return new SdkError('CHAIN_ERROR', error.message, { cause: error });

@@ -72,6 +72,30 @@ export interface BuildSignResult {
   signedTx: string | Uint8Array;
 }
 
+/** Result of broadcasting an already-signed transaction. */
+export interface BroadcastResult {
+  /** Transaction hash as the chain reported it. */
+  txHash: string;
+  /** Network the transaction was broadcast on. */
+  network: NetworkId;
+  /** When it was broadcast, in ms. */
+  broadcastAt: number;
+}
+
+/** Lifecycle of a transaction as the SDK reports it. */
+export type TxStatus = 'pending' | 'confirmed' | 'failed' | 'not_found';
+
+/** Status of one transaction, read from the local record or the chain. */
+export interface TxStatusResult {
+  txHash: string;
+  network: NetworkId;
+  status: TxStatus;
+  /** Blocks (or slots) on top of the transaction; `0` until it is confirmed. */
+  confirmations: number;
+  /** When the status was read, in ms. */
+  checkedAt: number;
+}
+
 /** A swap quote as the SDK reports it. */
 export interface QuoteSummary {
   fromToken: string;

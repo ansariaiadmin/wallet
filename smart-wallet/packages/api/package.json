@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@wallet/chains": "workspace:*",
     "@wallet/core": "workspace:*",
     "@wallet/router": "workspace:*",
     "hono": "4.13.9"
