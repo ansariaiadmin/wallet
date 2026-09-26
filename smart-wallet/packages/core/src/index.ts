@@ -1,3 +1,4 @@
+export * from './cache/index.js';
 export * from './commands';
 export * from './errors';
 export * from './keystore';

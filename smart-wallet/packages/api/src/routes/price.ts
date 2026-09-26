@@ -1,17 +1,17 @@
 import { Hono } from 'hono';
-import type { PriceOracle } from '@wallet/core';
+import type { CachedOracle } from '@wallet/core';
 import { ApiError } from '../errors';
 import { isNonEmptyString } from '../validation';
 
 /**
- * Price lookup backed by the P7 oracle.
+ * Price lookup backed by the cached P7 oracle.
  *
  * `GET /price/:symbol` answers with the aggregated USD price, the 24 hour
  * change in basis points and the confidence the oracle derived from how many
  * providers contributed. `SYMBOL_NOT_FOUND` and `ALL_FAILED` are thrown by the
  * oracle and turned into 404 and 503 by the global error handler.
  */
-export function priceRoutes(oracle: PriceOracle): Hono {
+export function priceRoutes(oracle: CachedOracle): Hono {
   return new Hono().get('/price/:symbol', async (c) => {
     const symbol = c.req.param('symbol');
     if (!isNonEmptyString(symbol)) {

@@ -4,6 +4,8 @@ import { add, compare, money, subtract, type Money } from '@core/money';
 import { Router } from '@router/router';
 import { Hono } from 'hono';
 import {
+  CachedOracle,
+  CachedRiskAssessor,
   mockBinanceProvider,
   mockChainalysisProvider,
   mockCoinGeckoProvider,
@@ -15,6 +17,8 @@ import {
 } from '@wallet/core';
 import { mockEvmAdapter, mockSolanaAdapter, mockTronAdapter, SwapRouter } from '@wallet/router';
 import { errorResponse } from './errors';
+import { rateLimitMiddleware, RateLimiter } from './rate-limit';
+import { cacheRoutes } from './routes/cache';
 import { healthRoutes } from './routes/health';
 import { priceRoutes } from './routes/price';
 import { quoteRoutes } from './routes/quote';
@@ -98,8 +102,28 @@ function createRiskChecker(): RiskChecker {
   return new RiskChecker([mockOfacProvider, mockChainalysisProvider, mockTokenWatchProvider]);
 }
 
+/** The oracle with the P12 price cache in front of it. */
+function createCachedOracle(): CachedOracle {
+  return new CachedOracle(createOracle());
+}
+
+/** The checker with the P12 screening cache in front of it. */
+function createCachedRisk(): CachedRiskAssessor {
+  return new CachedRiskAssessor(createRiskChecker());
+}
+
 function createSwapRouter(): SwapRouter {
   return new SwapRouter([mockEvmAdapter, mockSolanaAdapter, mockTronAdapter]);
+}
+
+/** Dependencies a test (or an embedder) can replace in {@link createApp}. */
+export interface AppDeps {
+  /** Cached price feed; defaults to the mock providers behind the P12 cache. */
+  readonly price?: CachedOracle;
+  /** Cached screening feed; defaults to the mock providers behind the P12 cache. */
+  readonly risk?: CachedRiskAssessor;
+  /** Rate limiter for `/api/v1`; defaults to 60 requests per minute per client. */
+  readonly rateLimiter?: RateLimiter;
 }
 
 /**
@@ -129,20 +153,27 @@ export function withErrorHandler(app: Hono): Hono {
  * and no listening socket: the caller decides how to serve it (`serve()` from
  * `@hono/node-server`, a worker, or `app.request()` in tests).
  */
-export function createApp(): Hono {
+export function createApp(deps: AppDeps = {}): Hono {
   const app = withErrorHandler(new Hono());
 
   app.notFound((c) =>
     c.json({ error: `no route for ${c.req.method} ${c.req.path}`, code: 'NOT_FOUND' }, 404),
   );
 
+  // Registered first so every /api/v1 answer is counted and stamped.
+  app.use('/api/v1/*', rateLimitMiddleware(deps.rateLimiter ?? new RateLimiter()));
+
+  const price = deps.price ?? createCachedOracle();
+  const risk = deps.risk ?? createCachedRisk();
+
   app.route('/api/v1', healthRoutes());
-  app.route('/api/v1', priceRoutes(createOracle()));
-  app.route('/api/v1', riskRoutes(createRiskChecker()));
+  app.route('/api/v1', priceRoutes(price));
+  app.route('/api/v1', riskRoutes(risk));
   app.route('/api/v1', quoteRoutes(createSwapRouter()));
   app.route('/api/v1', txRoutes());
   app.route('/api/v1', broadcastRoutes());
   app.route('/api/v1', statusRoutes());
+  app.route('/api/v1', cacheRoutes({ price, risk }));
 
   return app;
 }

@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { SwapRouter } from '@wallet/router';
 import { createApp } from '../app';
+import { RateLimiter } from '../rate-limit';
 import { quoteRoutes } from '../routes/quote';
 import { isChainType, isNonEmptyString, isPositiveNumberString, isTxType } from '../validation';
 import { jsonSafe } from '../serialize';
 
-const app = createApp();
+/**
+ * One app for every route test, with a limiter that never trips: rate limiting
+ * is exercised on its own in `cache.test.ts`, and these tests would otherwise
+ * share a single 60-per-minute bucket.
+ */
+const app = createApp({ rateLimiter: new RateLimiter({ limit: Number.MAX_SAFE_INTEGER }) });
 
 /** OFAC-listed Ethereum address from the P8 mock provider. */
 const OFAC_EVM = '0x37f53b2d1056e2e07a4aC10AD3B51928cfea0f47';
