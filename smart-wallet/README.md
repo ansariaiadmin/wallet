@@ -72,7 +72,41 @@ const tx = await buildTx(
 ```
 
 No private key, mnemonic or signature ever enters this package (a test scans
-the sources for that), and signing is left to a later phase.
+the sources for that).
+
+## Transaction signer
+
+`packages/core/src/signer` takes an unsigned transaction from the builder plus
+the caller's raw key material and returns a signed, broadcast-ready
+transaction. The caller owns the key lifecycle (P2 `unlockWallet`), so the
+signer works on a copy of the buffer and **zeroes it in a `finally` block** on
+every path — success, failure and invalid input alike:
+
+```ts
+import { sign } from '@wallet/core';
+
+const key = derivedKey.privateKey; // caller-owned copy
+try {
+  const signed = await sign({ unsignedTx: tx, privateKey: key });
+  // signed.serialized → Uint8Array (EVM, Solana) or JSON bytes (TRON)
+  // signed.txHash     → keccak256(signed bytes) | base58(first signature) | txID
+  // signed.meta       → from, signature, nonce, blockhash, derived ATAs, …
+} finally {
+  key.fill(0); // the signer already zeroed the buffer it was handed
+}
+```
+
+| Family   | Signing path                                                                      |
+| -------- | --------------------------------------------------------------------------------- |
+| `evm`    | viem `privateKeyToAccount(...).signTransaction`, `txHash = keccak256(signed)`     |
+| `solana` | `Keypair.fromSecretKey` + `Transaction.from(...).sign`, `txHash = base58(sig[0])` |
+| `tron`   | SHA-256 of `raw_data_hex`, secp256k1 via `@noble/curves`, `txHash = txID`         |
+
+`sign` throws `SignerError` with code `UNSUPPORTED_FAMILY`, `SIGN_FAILED` or
+`INVALID_INPUT`. Secp256k1 comes from `@noble/curves`, which is already in the
+dependency tree (viem and `@scure/bip32` depend on it), so no new dependency was
+added. A test scans the signer sources to make sure no key literal is stored in
+them, and the family suites generate their keys at runtime.
 
 ## CI
 
