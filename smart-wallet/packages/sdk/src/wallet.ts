@@ -27,6 +27,7 @@ import {
   SwapRouter,
   type SwapQuote,
 } from '@wallet/router';
+import { deriveEvm, deriveSolana, deriveTron, signPayload, type KeyStore } from '@wallet/keys';
 import { SdkError, toSdkError } from './errors';
 import {
   FAMILY_DERIVATION_PATH,
@@ -53,23 +54,34 @@ import type {
   WalletImportResult,
 } from './types';
 
+/** Id a phrase is stored under when the caller does not name one. */
+const DEFAULT_KEYSTORE_ID = 'default';
+
 /** Every method is offline: connectors only talk to endpoints a caller supplies. */
 export class SmartWallet {
   private readonly networks: readonly NetworkId[];
   private readonly priceMode: 'mock' | 'live';
   private readonly riskMode: 'mock' | 'live';
   private readonly rpcUrls: Readonly<Partial<Record<NetworkId, readonly string[]>>>;
+  /** Encrypted mnemonic store the signing phase reads from, when configured. */
+  private readonly keystore: KeyStore | undefined;
+  /** Id the phrase lives under in {@link keystore}. */
+  private readonly keystoreId: string;
 
   /** Encrypted keystore blob; `undefined` until create() or import(). */
   private encrypted: EncryptedKeystore | undefined;
   /** Decrypted wallet held after unlock(); zeroed by lock()/destroy(). */
   private unlocked: UnlockedWallet | undefined;
+  /** BIP-39 passphrase of the loaded phrase, when the caller gave one. */
+  private passphrase: string | undefined;
 
   constructor(config: WalletConfig = {}) {
     this.networks = config.networks ?? NETWORK_IDS;
     this.priceMode = config.priceProviders ?? 'mock';
     this.riskMode = config.riskProviders ?? 'mock';
     this.rpcUrls = config.rpcUrls ?? {};
+    this.keystore = config.keystore;
+    this.keystoreId = config.keystoreId ?? DEFAULT_KEYSTORE_ID;
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -87,6 +99,7 @@ export class SmartWallet {
       createWallet(password, passphrase === undefined ? {} : { passphrase }),
     );
     this.remember(wallet);
+    this.passphrase = passphrase;
     return { mnemonic: wallet.mnemonic, address: this.deriveAddresses(password) };
   }
 
@@ -101,6 +114,7 @@ export class SmartWallet {
       importWallet(mnemonic, password, passphrase === undefined ? {} : { passphrase }),
     );
     this.remember(wallet);
+    this.passphrase = passphrase;
     return { address: this.deriveAddresses(password) };
   }
 
@@ -230,6 +244,13 @@ export class SmartWallet {
 
     const unsigned = await this.guard(() => buildTx(txParams));
 
+    if (this.keystore !== undefined) {
+      // A KeyStore was configured: the phrase comes out of it and the P13
+      // signers do the work, so the core keystore is never touched.
+      const signed = await this.signFromKeyStore(unsigned, family, params.password);
+      return { network: params.network, signedTx: signed };
+    }
+
     const encrypted = this.requireKeystore();
     let unlocked: UnlockedWallet;
     try {
@@ -253,6 +274,51 @@ export class SmartWallet {
       }
     } finally {
       unlocked.destroy();
+    }
+  }
+
+  /**
+   * Signs with the P13 signers using a phrase from the configured KeyStore.
+   *
+   * The phrase is decrypted for the length of the call only; the derived key is
+   * handed over as a copy and wiped, exactly like the core path.
+   */
+  private async signFromKeyStore(
+    unsigned: { serialized: Uint8Array | string },
+    family: ChainFamily,
+    password: string,
+  ): Promise<Uint8Array | string> {
+    const keystore = this.keystore;
+    if (keystore === undefined) {
+      throw new SdkError('LOCKED', 'no keystore is configured');
+    }
+    let mnemonic: string;
+    try {
+      mnemonic = await keystore.load(this.keystoreId, password);
+    } catch (error) {
+      // The P13 store speaks in its own codes; the SDK speaks in its own.
+      const code = (error as { code?: unknown }).code;
+      throw new SdkError(
+        code === 'INVALID_MNEMONIC' ? 'INVALID_MNEMONIC' : 'LOCKED',
+        error instanceof Error ? error.message : 'the keystore could not be read',
+      );
+    }
+    const options = this.passphrase === undefined ? {} : { passphrase: this.passphrase };
+    // The builder tags the payload with its family as a plain string.
+    const payload = { family, serialized: unsigned.serialized };
+    const derived =
+      family === 'evm'
+        ? deriveEvm(mnemonic, 0, options)
+        : family === 'solana'
+          ? deriveSolana(mnemonic, 0, options)
+          : deriveTron(mnemonic, 0, options);
+    const key = Uint8Array.from(derived.privateKey);
+    try {
+      const signed = await this.guard(() => signPayload(payload, key));
+      // EVM payloads travel as hex, exactly like the core path returns them.
+      return family === 'evm' ? toHexPayload(signed) : signed;
+    } finally {
+      key.fill(0);
     }
   }
 

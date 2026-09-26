@@ -28,6 +28,9 @@
       "@api/*": ["packages/api/src/*"],
       "@sdk": ["packages/sdk/src/index.ts"],
       "@sdk/*": ["packages/sdk/src/*"],
+      "@keys": ["packages/keys/src/index.ts"],
+      "@keys/*": ["packages/keys/src/*"],
+      "@wallet/keys": ["packages/keys/src/index.ts"],
       "@chains": ["packages/chains/src/index.ts"],
       "@chains/*": ["packages/chains/src/*"]
     }

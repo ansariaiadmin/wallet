@@ -1,7 +1,8 @@
 # Smart Wallet
 
-Monorepo for the Smart Wallet platform — a pnpm workspace with four packages:
-`core` (domain), `router` (dispatch), `api` (application surface) and `sdk` (client).
+Monorepo for the Smart Wallet platform — a pnpm workspace with five packages:
+`core` (domain), `router` (dispatch), `api` (application surface), `sdk` (client)
+and `keys` (key management and HD signing).
 
 ## Layout
 
@@ -13,6 +14,7 @@ smart-wallet/
 │   ├── chains/   # multi-chain RPC layer: EVM (viem), Solana (web3.js), TRON (TronGrid)
 │   ├── router/   # typed route → handler registry
 │   ├── api/      # wallet application surface wired on top of core + router
+│   ├── keys/     # key management: BIP-39, BIP-32/SLIP-0010, AES-256-GCM store, signers
 │   └── sdk/      # typed client over an injectable transport
 ├── eslint.config.mjs      # shared ESLint flat config
 ├── tsconfig.base.json     # shared strict TS config + path aliases
@@ -39,13 +41,15 @@ smart-wallet/
 TypeScript and Vitest both resolve the workspace sources directly, so packages
 import each other without a build step:
 
-| Alias       | Resolves to             |
-| ----------- | ----------------------- |
-| `@core/*`   | `packages/core/src/*`   |
-| `@router/*` | `packages/router/src/*` |
-| `@api/*`    | `packages/api/src/*`    |
-| `@sdk/*`    | `packages/sdk/src/*`    |
-| `@chains/*` | `packages/chains/src/*` |
+| Alias          | Resolves to             |
+| -------------- | ----------------------- |
+| `@core/*`      | `packages/core/src/*`   |
+| `@router/*`    | `packages/router/src/*` |
+| `@api/*`       | `packages/api/src/*`    |
+| `@sdk/*`       | `packages/sdk/src/*`    |
+| `@chains/*`    | `packages/chains/src/*` |
+| `@keys/*`      | `packages/keys/src/*`   |
+| `@wallet/keys` | `packages/keys/src`     |
 
 ## Transaction builder
 
@@ -107,6 +111,47 @@ try {
 dependency tree (viem and `@scure/bip32` depend on it), so no new dependency was
 added. A test scans the signer sources to make sure no key literal is stored in
 them, and the family suites generate their keys at runtime.
+
+## Key management
+
+`packages/keys` (`@wallet/keys`) is the standalone key-management package:
+mnemonics, derivation, at-rest encryption, an in-memory keystore and per-family
+signers. Everything is offline — no HTTP, no filesystem, no key ever leaves the
+process:
+
+```ts
+import { MemoryKeyStore, deriveEvm, createEvmSigner, signPayload } from '@wallet/keys';
+
+const store = new MemoryKeyStore();
+await store.store('default', mnemonic, 'keystore password');
+
+const key = deriveEvm(await store.load('default', 'keystore password'));
+const signer = createEvmSigner(key.privateKey);
+const signature = await signer.signMessage('hello wallet');
+signer.destroy(); // wipes the key copy
+```
+
+| Module            | What it owns                                                              |
+| ----------------- | ------------------------------------------------------------------------- |
+| `mnemonic`        | `generate`/`validate`/`toSeed` on the English BIP-39 wordlist             |
+| `slip10`          | HMAC-SHA512 hardened derivation for ed25519 (Solana)                      |
+| `derive`          | BIP-44 paths and addresses for `evm`, `solana`, `tron`                    |
+| `encrypt`         | AES-256-GCM + PBKDF2 (250 000 iterations) at-rest blobs                   |
+| `keystore`        | `MemoryKeyStore` (`store`/`load`/`has`/`remove`) over those blobs         |
+| `signers/*`       | EVM (viem), Solana (`@solana/web3.js`) and TRON (secp256k1 + base58check) |
+| `signers/payload` | `signPayload` — signs a builder payload with the family's signer          |
+
+Derivation paths are `m/44'/60'/{account}'/0/{index}` (EVM),
+`m/44'/195'/{account}'/0/{index}` (TRON) and `m/44'/501'/{index}'/0'` (Solana,
+hardened SLIP-0010 only), so the addresses match what `@wallet/core` reports.
+Failures throw `KeyStoreError` with codes `INVALID_MNEMONIC`, `WRONG_PASSWORD`,
+`LOCKED`, `UNSUPPORTED_FAMILY`, `DERIVE_FAILED`, `SIGN_FAILED` or
+`INVALID_INPUT`.
+
+The SDK takes the store through `WalletConfig.keystore`: when it is set,
+`buildAndSign` loads the phrase from it and signs with these signers; without
+it, the SDK keeps using the core keystore path. The two produce byte-identical
+payloads for the same phrase and path (a test asserts exactly that).
 
 ## CI
 

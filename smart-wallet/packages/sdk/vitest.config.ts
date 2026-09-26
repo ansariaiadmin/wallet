@@ -14,6 +14,8 @@ export default defineConfig({
       '@wallet/core': fromHere('../core/src/index.ts'),
       '@wallet/chains': fromHere('../chains/src/index.ts'),
       '@wallet/router': fromHere('../router/src/index.ts'),
+      '@wallet/keys': fromHere('../keys/src/index.ts'),
+      '@keys': fromHere('../keys/src'),
       '@core': fromHere('../core/src'),
       '@chains': fromHere('../chains/src'),
       '@router': fromHere('../router/src'),

@@ -6,6 +6,8 @@
  * the facade picks the family, the connector and the derivation path.
  */
 
+import type { KeyStore } from '@wallet/keys';
+
 /** Chain families the SDK can derive keys and build transactions for. */
 export type ChainFamily = 'evm' | 'solana' | 'tron';
 
@@ -33,6 +35,15 @@ export interface WalletConfig {
   riskProviders?: 'mock' | 'live';
   /** RPC endpoint overrides, for tests and private nodes. */
   rpcUrls?: Readonly<Partial<Record<NetworkId, readonly string[]>>>;
+  /**
+   * Encrypted mnemonic store the signing phase reads from.
+   *
+   * When it is set, `buildAndSign` loads the phrase out of it and signs with
+   * the P13 signers instead of the in-process core keystore.
+   */
+  keystore?: KeyStore;
+  /** Id the phrase is stored under. Defaults to `"default"`. */
+  keystoreId?: string;
 }
 
 /** A freshly generated wallet. */

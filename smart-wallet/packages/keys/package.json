@@ -1,13 +1,10 @@
 {
-  "name": "@wallet/sdk",
+  "name": "@wallet/keys",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -15,10 +12,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@wallet/chains": "workspace:*",
-    "@wallet/core": "workspace:*",
-    "@wallet/keys": "workspace:*",
-    "@wallet/router": "workspace:*"
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/base": "2.4.0",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0",
+    "@solana/web3.js": "1.99.0",
+    "viem": "2.56.9"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
