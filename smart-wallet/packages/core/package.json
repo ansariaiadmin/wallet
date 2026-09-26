@@ -22,6 +22,9 @@
     "@noble/hashes": "2.4.0",
     "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
-    "@scure/bip39": "2.4.0"
+    "@scure/bip39": "2.4.0",
+    "@solana/web3.js": "1.99.0",
+    "@wallet/chains": "workspace:*",
+    "viem": "2.56.9"
   }
 }

@@ -45,6 +45,34 @@ import each other without a build step:
 | `@router/*` | `packages/router/src/*` |
 | `@api/*`    | `packages/api/src/*`    |
 | `@sdk/*`    | `packages/sdk/src/*`    |
+| `@chains/*` | `packages/chains/src/*` |
+
+## Transaction builder
+
+`packages/core/src/tx-builder` turns plain transfer parameters into an
+**unsigned** transaction, priced with the P3 connectors:
+
+```ts
+import { buildTx } from '@wallet/core';
+
+const tx = await buildTx(
+  {
+    family: 'evm', // 'evm' | 'solana' | 'tron'
+    chainId: 'ethereum',
+    network: 'testnet',
+    from: '0x…',
+    to: '0x…',
+    amount: 250_000_000_000_000_000n,
+  },
+  { connector, nonce: 12n }, // connector prices the tx, nonce comes from the node
+);
+// tx.serialized → Uint8Array (EVM, Solana) or JSON bytes (TRON)
+// tx.fee        → P3 FeeEstimate (zeroed, with a warning, without a connector)
+// tx.meta       → nonce, gas, blockhash, txID, derived ATAs, warnings, …
+```
+
+No private key, mnemonic or signature ever enters this package (a test scans
+the sources for that), and signing is left to a later phase.
 
 ## CI
 

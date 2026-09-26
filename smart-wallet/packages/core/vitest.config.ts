@@ -7,7 +7,7 @@ const fromHere = (relativePath: string): string =>
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
   },
   resolve: {
     alias: {
@@ -15,6 +15,7 @@ export default defineConfig({
       '@router': fromHere('../router/src'),
       '@api': fromHere('../api/src'),
       '@sdk': fromHere('../sdk/src'),
+      '@chains': fromHere('../chains/src'),
     },
   },
 });
