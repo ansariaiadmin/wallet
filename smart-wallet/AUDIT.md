@@ -215,3 +215,30 @@ no status would ever be found).
 
 Numbers: core 176 → 177, api 190 → 192, monorepo 694 → **697 passed** with the
 same 5 skipped. typecheck, lint, format clean.
+
+### After S4 — the second wallet surface is gone
+
+`api/src/app.ts` carried a `WalletApp` class: a 116-line in-memory ledger
+facade with its own balances, posting history and command router. No route used
+it, no other package imported it, and it was the only thing keeping
+`core/commands.ts` and `core/types.ts` alive — the double-entry vocabulary the
+base scaffold shipped with.
+
+It was **not** untested: `packages/api/test/app.test.ts` had 4 passing tests. An
+earlier scan of this audit looked only in `src/tests` and concluded it had none;
+that was wrong, and the correction matters because it is the difference between
+"delete dead code" and "delete tested code".
+
+It is deleted anyway, on the grounds that what those 4 tests exercised is
+covered where it belongs: the money arithmetic (`add`, `subtract`, `compare`,
+currency guards) by `core/test/money.test.ts`, and the command dispatch by the
+router's own 37 tests. Nothing in the product lost a code path, because nothing
+in the product used one.
+
+Removed with it: `core/commands.ts`, `core/types.ts`, the api's legacy `test/`
+directory, and the second entry in the api's vitest `include` and tsconfig.
+
+Numbers: src 15,438 → 15,445 LOC (+7, the imports and comments that stayed),
+api 192 → 188 tests, monorepo **697 → 693 passed** with the same 5 skipped.
+typecheck, lint and format clean. Layering axis 5.0 → 6.0, weighted total
+**7.6 → 7.7 / 10**.
