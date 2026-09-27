@@ -297,6 +297,26 @@ The password is asked for again because encrypting a phrase needs the secret and
 a bearer token deliberately does not carry one — caching it would turn a
 short-lived token into a permanent one.
 
+## Testing
+
+```
+pnpm -r test                       # 743 passed, 9 skipped
+RUN_E2E=1 pnpm --filter @wallet/api test    # + 4 recorded-fixture e2e tests
+```
+
+Two suites are env-gated and skipped by default, and the reason is the same for
+both: they need a network this sandbox does not have.
+
+- `RUN_INTEGRATION=1` in `@wallet/chains` talks to real testnets.
+- `RUN_E2E=1` in `@wallet/api` replays **recorded** JSON-RPC fixtures — no
+  network, no key, no faucet. It exercises the whole path from request to JSON
+  body, and it proves nothing about whether a node is up. A green `RUN_E2E` is
+  not a green mainnet, and `src/tests/e2e/recorded.test.ts` says so in its own
+  header.
+
+Every fixture must answer a `result`, never an `error`: a fixture that answers an
+error is a fixture nobody really recorded.
+
 ## Observability
 
 Every `/api/v1` request is timed, counted and labelled by route pattern, and
