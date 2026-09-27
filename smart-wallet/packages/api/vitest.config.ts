@@ -12,6 +12,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@wallet/chains': fromHere('../chains/src'),
+      '@wallet/keys': fromHere('../keys/src'),
+      '@keys': fromHere('../keys/src'),
       '@core': fromHere('../core/src'),
       '@chains': fromHere('../chains/src'),
       '@router': fromHere('../router/src'),

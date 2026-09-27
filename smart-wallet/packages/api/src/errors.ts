@@ -3,7 +3,7 @@ import { OracleError, RiskError } from '@wallet/core';
 import { RouterError } from '@wallet/router';
 
 /** HTTP status codes the API answers with. */
-export type ApiStatus = 400 | 404 | 422 | 500 | 503;
+export type ApiStatus = 400 | 401 | 404 | 409 | 422 | 500 | 503;
 
 /** Error body every failure is rendered as. */
 export interface ApiErrorBody {

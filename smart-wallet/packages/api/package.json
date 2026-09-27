@@ -14,8 +14,10 @@
   "dependencies": {
     "@wallet/chains": "workspace:*",
     "@wallet/core": "workspace:*",
+    "@wallet/keys": "workspace:*",
     "@wallet/router": "workspace:*",
-    "hono": "4.13.9"
+    "hono": "4.13.9",
+    "jose": "5.10.0"
   },
   "peerDependencies": {
     "@hono/node-server": "^1.0.0"

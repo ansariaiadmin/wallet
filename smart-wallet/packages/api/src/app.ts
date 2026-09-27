@@ -17,6 +17,10 @@ import {
 } from '@wallet/core';
 import { mockEvmAdapter, mockSolanaAdapter, mockTronAdapter, SwapRouter } from '@wallet/router';
 import { errorResponse } from './errors';
+import { randomJwtSecret, TokenRevocation } from './auth/jwt';
+import { authRoutes } from './auth/router';
+import { MemoryUserStore, type UserStore } from './auth/user-store';
+import type { KeyStore } from '@wallet/keys';
 import { rateLimitMiddleware, RateLimiter } from './rate-limit';
 import { cacheRoutes } from './routes/cache';
 import { healthRoutes } from './routes/health';
@@ -124,6 +128,21 @@ export interface AppDeps {
   readonly risk?: CachedRiskAssessor;
   /** Rate limiter for `/api/v1`; defaults to 60 requests per minute per client. */
   readonly rateLimiter?: RateLimiter;
+  /** User directory for `/auth`; defaults to a fresh in-memory store. */
+  readonly userStore?: UserStore;
+  /** Encrypted mnemonic store registering writes to; none by default. */
+  readonly keystore?: KeyStore;
+  /**
+   * Logout list the `/auth` endpoints share. Defaults to one per app; pass the
+   * same instance to several apps when they must agree on what is logged out.
+   */
+  readonly revoked?: TokenRevocation;
+  /**
+   * Secret the `/auth` tokens are signed with. Defaults to a random secret for
+   * the life of the process, which is right for dev and tests: every restart
+   * invalidates every token, and nothing secret has to be configured.
+   */
+  readonly jwtSecret?: Uint8Array;
 }
 
 /**
@@ -165,6 +184,19 @@ export function createApp(deps: AppDeps = {}): Hono {
 
   const price = deps.price ?? createCachedOracle();
   const risk = deps.risk ?? createCachedRisk();
+
+  // One logout list per app by default, shared by the routes that mint tokens
+  // and the middleware that refuses them.
+  const revoked = deps.revoked ?? new TokenRevocation();
+  app.route(
+    '/api/v1',
+    authRoutes({
+      userStore: deps.userStore ?? new MemoryUserStore(),
+      secret: deps.jwtSecret ?? randomJwtSecret(),
+      keystore: deps.keystore,
+      revoked,
+    }),
+  );
 
   app.route('/api/v1', healthRoutes());
   app.route('/api/v1', priceRoutes(price));

@@ -35,12 +35,18 @@ importers:
       '@wallet/core':
         specifier: workspace:*
         version: link:../core
+      '@wallet/keys':
+        specifier: workspace:*
+        version: link:../keys
       '@wallet/router':
         specifier: workspace:*
         version: link:../router
       hono:
         specifier: 4.13.9
         version: 4.13.9
+      jose:
+        specifier: 5.10.0
+        version: 5.10.0
     devDependencies:
       '@hono/node-server':
         specifier: 1.19.17
@@ -875,6 +881,9 @@ packages:
     resolution: {integrity: sha512-AauzHcUcqs8OBnCHOkJY280VaTiCm57AbuO7lqzcw7JapGj50BisE3xhksye4zlTSR1+1tAz67wLTl8tEH1obQ==}
     engines: {node: '>=8'}
     hasBin: true
+
+  jose@5.10.0:
+    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
 
   js-yaml@4.3.2:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
@@ -1990,6 +1999,8 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  jose@5.10.0: {}
 
   js-yaml@4.3.2:
     dependencies:

@@ -115,9 +115,9 @@ them, and the family suites generate their keys at runtime.
 ## Key management
 
 `packages/keys` (`@wallet/keys`) is the standalone key-management package:
-mnemonics, derivation, at-rest encryption, an in-memory keystore and per-family
-signers. Everything is offline — no HTTP, no filesystem, no key ever leaves the
-process:
+mnemonics, derivation, at-rest encryption, keystores (in memory and on disk) and
+per-family signers. Everything runs offline — no HTTP, and no key ever leaves
+the process:
 
 ```ts
 import { MemoryKeyStore, deriveEvm, createEvmSigner, signPayload } from '@wallet/keys';
@@ -138,6 +138,7 @@ signer.destroy(); // wipes the key copy
 | `derive`          | BIP-44 paths and addresses for `evm`, `solana`, `tron`                    |
 | `encrypt`         | AES-256-GCM + PBKDF2 (250 000 iterations) at-rest blobs                   |
 | `keystore`        | `MemoryKeyStore` (`store`/`load`/`has`/`remove`) over those blobs         |
+| `keystores/file`  | `FileKeyStore` — one encrypted file per id, `0600`, sanitized ids         |
 | `signers/*`       | EVM (viem), Solana (`@solana/web3.js`) and TRON (secp256k1 + base58check) |
 | `signers/payload` | `signPayload` — signs a builder payload with the family's signer          |
 
@@ -145,13 +146,61 @@ Derivation paths are `m/44'/60'/{account}'/0/{index}` (EVM),
 `m/44'/195'/{account}'/0/{index}` (TRON) and `m/44'/501'/{index}'/0'` (Solana,
 hardened SLIP-0010 only), so the addresses match what `@wallet/core` reports.
 Failures throw `KeyStoreError` with codes `INVALID_MNEMONIC`, `WRONG_PASSWORD`,
-`LOCKED`, `UNSUPPORTED_FAMILY`, `DERIVE_FAILED`, `SIGN_FAILED` or
+`LOCKED`, `NOT_FOUND`, `UNSUPPORTED_FAMILY`, `DERIVE_FAILED`, `SIGN_FAILED` or
 `INVALID_INPUT`.
+
+`FileKeyStore` is the persistent backend: it writes the same AES-256-GCM blob to
+`<dir>/<id>.enc` with owner-only permissions, and only accepts ids that are
+letters, digits, `_` or `-` (1–64 of them), so an id can never walk out of the
+directory:
+
+```ts
+import { FileKeyStore } from '@wallet/keys';
+
+const store = new FileKeyStore('./data/keystore');
+await store.store('wallet-main', mnemonic, 'keystore password');
+await store.load('wallet-main', 'keystore password'); // the phrase, decrypted
+await store.remove('wallet-main'); // NOT_FOUND when it was never there
+```
 
 The SDK takes the store through `WalletConfig.keystore`: when it is set,
 `buildAndSign` loads the phrase from it and signs with these signers; without
 it, the SDK keeps using the core keystore path. The two produce byte-identical
 payloads for the same phrase and path (a test asserts exactly that).
+
+## Auth
+
+`packages/api/src/auth` adds JWT authentication and the wallet endpoints that go
+with it, on `jose` (HS256, the only new dependency in the tree):
+
+| Method   | Path             | Auth | What it does                                           |
+| -------- | ---------------- | ---- | ------------------------------------------------------ |
+| `POST`   | `/auth/register` | –    | username + password → user + wallet → token (201)      |
+| `POST`   | `/auth/login`    | –    | username + password → token (200, 401 when wrong)      |
+| `GET`    | `/auth/me`       | ✓    | the caller's user and wallet id (200, 401 without one) |
+| `DELETE` | `/auth/logout`   | ✓    | revokes the token (204); it is refused afterwards      |
+
+Passwords are stored as `scrypt` hashes (`N=16384, r=8, p=1`, per-user salt,
+parameters carried in the hash) — never as plaintext, and never answered with.
+Login runs scrypt even for an unknown username so the answer time does not
+reveal whether a name exists. Logout is a token-id blacklist that remembers an
+entry only until the token would have expired anyway.
+
+`createApp` takes the seam through `AppDeps`:
+
+```ts
+const app = createApp({
+  userStore: new MemoryUserStore(), // or a store of your own
+  keystore: new FileKeyStore('./data/keystore'), // optional: mint a wallet on register
+  jwtSecret: process.env.JWT_SECRET, // random per process when omitted
+});
+```
+
+Without `jwtSecret` a random secret is generated for the life of the process —
+right for dev and tests, since every restart then invalidates every token and
+nothing secret has to be configured. The wallet endpoints (`/quote`, `/build`,
+`broadcast`) stay public in this phase; `requireAuth` is exported for the phase
+that locks them down.
 
 ## CI
 

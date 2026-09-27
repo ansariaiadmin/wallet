@@ -36,6 +36,7 @@ export type KeyStoreErrorCode =
   | 'INVALID_MNEMONIC'
   | 'WRONG_PASSWORD'
   | 'LOCKED'
+  | 'NOT_FOUND'
   | 'UNSUPPORTED_FAMILY'
   | 'DERIVE_FAILED'
   | 'SIGN_FAILED'
