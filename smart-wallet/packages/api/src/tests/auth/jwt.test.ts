@@ -82,9 +82,15 @@ describe('verifyToken failures', () => {
   it('rejects a tampered token', async () => {
     const token = await signToken(payload(), SECRET);
     const parts = token.split('.');
-    // Flip one character of the signature segment.
+    // Flip the FIRST character of the signature segment, never the last: a
+    // 32-byte HMAC is 43 base64 characters whose final one carries only four
+    // significant bits, so the two trailing bits are ignored by every decoder.
+    // Changing the last character therefore sometimes yields the same 32 bytes
+    // and the tampered token verifies — a security test that passes for the
+    // wrong reason, and only some of the time.
     const signature = parts[2] ?? '';
-    const flipped = `${signature.slice(0, -1)}${signature.endsWith('A') ? 'B' : 'A'}`;
+    const head = signature.slice(0, 1);
+    const flipped = `${head === 'A' ? 'B' : 'A'}${signature.slice(1)}`;
 
     await expect(verifyToken(`${parts[0]}.${parts[1]}.${flipped}`, SECRET)).rejects.toMatchObject({
       code: 'INVALID_TOKEN',

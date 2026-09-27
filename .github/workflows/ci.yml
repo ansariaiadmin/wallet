@@ -43,5 +43,24 @@ jobs:
       - name: Format
         run: pnpm format:check
 
+      # The log is captured as an artifact even when this step fails: the first
+      # CI run of this repo failed only in Test, and its log was unreachable
+      # afterwards, which turned a five-minute diagnosis into a guess.
       - name: Test
-        run: pnpm test
+        id: test
+        run: pnpm test 2>&1 | tee test-output.txt
+        continue-on-error: true
+
+      - name: Fail the job if the tests failed
+        if: steps.test.outcome == 'failure'
+        run: |
+          echo "::error::the test suite failed; see the test-output artifact"
+          exit 1
+
+      - name: Upload the test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: smart-wallet/test-output.txt
+          if-no-files-found: warn

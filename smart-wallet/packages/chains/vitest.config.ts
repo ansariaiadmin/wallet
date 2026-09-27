@@ -1,12 +1,13 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { sharedTestConfig } from '../../vitest.shared';
 
 const fromHere = (relativePath: string): string =>
   fileURLToPath(new URL(relativePath, import.meta.url));
 
 export default defineConfig({
   test: {
-    environment: 'node',
+    ...sharedTestConfig,
     include: ['test/**/*.test.ts'],
   },
   resolve: {
