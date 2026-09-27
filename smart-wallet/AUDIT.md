@@ -410,6 +410,31 @@ Numbers: api 222 → 228, monorepo **743 passed** with the same 5 skipped.
 typecheck, lint and format clean. OpenAPI grew to 17 operations, still verified
 by the round-trip test.
 
+### After S11 — the offline form of live coverage
+
+`packages/api/src/tests/e2e/recorded.test.ts` replays **recorded** JSON-RPC
+fixtures and is gated behind `RUN_E2E=1`, so it is skipped by default and runs
+with one env var. No network, no key, no faucet, no timing.
+
+What it closes: the audit's "no live coverage" gap asked for an end-to-end path,
+and this exercises the whole chain — request → transport → connector → api route
+→ JSON body — which a unit test on one module cannot. What it does not close, and
+the suite says so in its own docstring: it proves nothing about whether a node is
+reachable or a transaction confirms. A green `RUN_E2E` is not a green mainnet, and
+the file that says so is the test file, not just this one.
+
+One assertion worth calling out: a fixture must answer a `result`, never an
+`error`. A fixture that answers an error is a fixture nobody really recorded, and
+a suite that answers 200 with an unread error is how a suite ends up green while
+proving nothing.
+
+Numbers: api 228 → 232 (4 e2e, skipped by default, passing under `RUN_E2E=1`).
+Monorepo **743 passed, 9 skipped**.
+
+**Score after S11: 9.23 / 10 — unchanged.** Correctness stays at 9.0 because the
+axis is "correctness _and test depth_, offline" and this is still offline. It is
+the honest ceiling from here.
+
 **Score after S10: 9.23 / 10 — unchanged, and deliberately so.**
 
 This phase closes a _scope_ gap, not a score gap: "one user owns one wallet" was
@@ -458,35 +483,23 @@ unchanged either way.
 3. **Layering 8.0.** `/quote` and the broadcast payload still sit outside the
    wallet, for the contract reason above.
 
-### What still stands between this and a 10
-
-Stated plainly, because a 10 claimed over these would be the exact failure this
-file exists to prevent:
-
-1. **`/broadcast` and `/quote` bypass the sdk** — a contract mismatch, not an
-   oversight (above). Layering 8.0.
-2. **No live coverage.** No outbound HTTPS except the npm registry; the five
-   `RUN_INTEGRATION` tests stay skipped and no `RUN_E2E` suite exists. A wallet
-   with zero verified live broadcast is not a 10.
-3. **No multi-wallet identity.** One user owns one wallet.
-4. **Docs 6.5.** The README is good; there is no per-package API reference and
-   no OpenAPI document.
-
 ### Why this is not a 10, stated plainly
 
-Three gaps, none of which close from this sandbox:
+Three gaps. Two of them close here; one does not.
 
-1. **Layering is 7.0, not 10.** The build path is unified; `/quote`, `/price`
-   and `/risk` still call core directly, and `/broadcast` still goes through
-   `@wallet/chains` rather than `SmartWallet.broadcast`. The remaining work is
-   mechanical but it is not done, and claiming a 10 for half a refactor would
-   be exactly the kind of unverified claim this file exists to prevent.
-2. **No live coverage.** The sandbox has no outbound HTTPS except the npm
-   registry. The five `RUN_INTEGRATION` tests stay skipped and no `RUN_E2E`
-   suite exists. A wallet with zero verified live broadcast is not a 10.
-3. **No multi-wallet identity.** One user owns one wallet; `walletId` is not a
-   first-class key with its own keystore namespace.
-
-What a 10 would need: the three route groups moved onto the sdk, an env-gated
-`RUN_E2E=1` suite with recorded fixtures, and multi-wallet identity. Each is a
-phase, and each is written down rather than assumed away.
+1. **No live coverage, and none is possible here.** This sandbox has no outbound
+   HTTPS except the npm registry, so no real testnet broadcast, no real balance,
+   no real faucet. The five `RUN_INTEGRATION` tests and the four `RUN_E2E` tests
+   stay skipped by design; S11 is the offline form of the path, not the thing
+   itself. A wallet with zero verified live broadcast cannot be scored a 10 on
+   correctness however good its unit tests are. This is the single largest
+   remaining gap and it is not closable from this environment — stating it is the
+   only honest move.
+2. **Packaging is 8.0.** Every package exports source; nothing is built to
+   `dist` and nothing is publishable as-is. Publishing needs a build, a `files`
+   allowlist and a real version, which is a release decision rather than a
+   refactor.
+3. **Layering is 8.0.** `/quote` and the broadcast payload sit outside the
+   wallet. The broadcast half is a genuine contract mismatch — the api validates
+   a caller's encoded string, the sdk encodes a signer's bytes — so it is a
+   decision to make deliberately, not a task to grind through.
