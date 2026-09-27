@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@core": ["packages/core/src/index.ts"],
+      "@core/*": ["packages/core/src/*"],
+      "@router": ["packages/router/src/index.ts"],
+      "@router/*": ["packages/router/src/*"],
+      "@api": ["packages/api/src/index.ts"],
+      "@api/*": ["packages/api/src/*"],
+      "@sdk": ["packages/sdk/src/index.ts"],
+      "@sdk/*": ["packages/sdk/src/*"],
+      "@keys": ["packages/keys/src/index.ts"],
+      "@keys/*": ["packages/keys/src/*"],
+      "@wallet/keys": ["packages/keys/src/index.ts"],
+      "@chains": ["packages/chains/src/index.ts"],
+      "@chains/*": ["packages/chains/src/*"]
+    }
+  }
+}

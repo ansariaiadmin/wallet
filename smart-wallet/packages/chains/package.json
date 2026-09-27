@@ -1,0 +1,26 @@
+{
+  "name": "@wallet/chains",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "RUN_INTEGRATION=1 vitest run test/integration",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "@scure/base": "2.4.0",
+    "@solana/web3.js": "1.99.0",
+    "viem": "2.56.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

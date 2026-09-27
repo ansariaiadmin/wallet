@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: smart-wallet
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: smart-wallet/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Format
+        run: pnpm format:check
+
+      # The log is captured as an artifact even when this step fails: the first
+      # CI run of this repo failed only in Test, and its log was unreachable
+      # afterwards, which turned a five-minute diagnosis into a guess.
+      - name: Test
+        id: test
+        run: pnpm test 2>&1 | tee test-output.txt
+        continue-on-error: true
+
+      - name: Fail the job if the tests failed
+        if: steps.test.outcome == 'failure'
+        run: |
+          echo "::error::the test suite failed; see the test-output artifact"
+          exit 1
+
+      - name: Upload the test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: smart-wallet/test-output.txt
+          if-no-files-found: warn
