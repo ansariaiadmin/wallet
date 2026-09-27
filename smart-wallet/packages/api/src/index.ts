@@ -1,4 +1,5 @@
 export * from './app';
+export * from './config';
 export * from './auth/jwt';
 export * from './auth/middleware';
 export * from './auth/router';

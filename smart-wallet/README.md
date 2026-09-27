@@ -202,6 +202,33 @@ nothing secret has to be configured. The wallet endpoints (`/quote`, `/build`,
 `broadcast`) stay public in this phase; `requireAuth` is exported for the phase
 that locks them down.
 
+## Configuration
+
+Everything the API reads at runtime comes from the environment; copy
+`.env.example` to `.env` (git-ignored) and fill in what you need. No value is
+hardcoded and no secret belongs in the repository.
+
+| Variable       | Required | Default            | What it does                                              |
+| -------------- | -------- | ------------------ | --------------------------------------------------------- |
+| `JWT_SECRET`   | prod     | random per process | Signs `/auth` tokens; 64 hex chars or base64 of 32+ bytes |
+| `KEYSTORE_DIR` | no       | none               | Directory `FileKeyStore` keeps encrypted mnemonics in     |
+| `PORT`         | no       | `3000`             | TCP port the server binds                                 |
+| `NODE_ENV`     | no       | `development`      | Deployment mode                                           |
+| `*_RPC_URL`    | no       | public endpoints   | Override the chain registry's endpoint list               |
+| `RUN_E2E`      | no       | `0`                | Opt-in end-to-end tests against live testnets             |
+
+```bash
+cp .env.example .env
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))" # → JWT_SECRET
+pnpm --filter @wallet/api start                                        # serves /api/v1
+```
+
+Without `JWT_SECRET` a random secret is generated for the life of the process,
+so every restart invalidates every token — right for development, wrong for
+production. A _malformed_ value throws at startup rather than being ignored:
+`JWT_SECRET=short` failing loudly is what stops a deployment signing tokens
+with a key nobody chose.
+
 ## CI
 
 `.github/workflows/ci.yml` runs lint + test on every push and pull request to
