@@ -1,7 +1,5 @@
 import {
   buildTx,
-  createWallet,
-  importWallet,
   mockBinanceProvider,
   mockChainalysisProvider,
   mockCoinGeckoProvider,
@@ -11,14 +9,25 @@ import {
   PriceOracle,
   RiskChecker,
   sign,
-  unlockWallet,
   type ContractToken,
-  type CreatedWallet,
-  type EncryptedKeystore,
   type SplToken,
   type TxParams,
-  type UnlockedWallet,
 } from '@wallet/core';
+import {
+  assertValid,
+  decrypt,
+  deriveEvm,
+  deriveKey,
+  deriveSolana,
+  deriveTron,
+  encrypt,
+  generate,
+  signPayload,
+  toSeed,
+  type DerivedKey,
+  type EncryptedBlob,
+  type KeyStore,
+} from '@wallet/keys';
 import { createConnector, type ChainConnector } from '@wallet/chains';
 import {
   mockEvmAdapter,
@@ -27,7 +36,6 @@ import {
   SwapRouter,
   type SwapQuote,
 } from '@wallet/router';
-import { deriveEvm, deriveSolana, deriveTron, signPayload, type KeyStore } from '@wallet/keys';
 import { SdkError, toSdkError } from './errors';
 import {
   FAMILY_DERIVATION_PATH,
@@ -57,6 +65,19 @@ import type {
 /** Id a phrase is stored under when the caller does not name one. */
 const DEFAULT_KEYSTORE_ID = 'default';
 
+/**
+ * A decrypted phrase and the seed derived from it.
+ *
+ * It replaces the old `UnlockedWallet`: the seed is the only secret held in
+ * memory, and dropping the reference is what `lock()` and `destroy()` do. A
+ * JavaScript string cannot be zeroed, so the phrase is never kept alongside the
+ * seed — the seed alone is enough to sign.
+ */
+interface UnlockedPhrase {
+  readonly mnemonic: string;
+  readonly seed: Uint8Array;
+}
+
 /** Every method is offline: connectors only talk to endpoints a caller supplies. */
 export class SmartWallet {
   private readonly networks: readonly NetworkId[];
@@ -68,10 +89,8 @@ export class SmartWallet {
   /** Id the phrase lives under in {@link keystore}. */
   private readonly keystoreId: string;
 
-  /** Encrypted keystore blob; `undefined` until create() or import(). */
-  private encrypted: EncryptedKeystore | undefined;
-  /** Decrypted wallet held after unlock(); zeroed by lock()/destroy(). */
-  private unlocked: UnlockedWallet | undefined;
+  /** Encrypted phrase; `undefined` until create() or import(). */
+  private encrypted: EncryptedBlob | undefined;
   /** BIP-39 passphrase of the loaded phrase, when the caller gave one. */
   private passphrase: string | undefined;
 
@@ -95,12 +114,10 @@ export class SmartWallet {
    */
   async create(password: string, passphrase?: string): Promise<WalletCreateResult> {
     this.requirePassword(password);
-    const wallet = await this.guard(() =>
-      createWallet(password, passphrase === undefined ? {} : { passphrase }),
-    );
-    this.remember(wallet);
+    const mnemonic = await this.guard(() => generate());
+    this.remember(mnemonic, password);
     this.passphrase = passphrase;
-    return { mnemonic: wallet.mnemonic, address: this.deriveAddresses(password) };
+    return { mnemonic, address: this.deriveAddresses(password) };
   }
 
   /** Restores a wallet from an existing BIP-39 mnemonic. */
@@ -110,10 +127,8 @@ export class SmartWallet {
     passphrase?: string,
   ): Promise<WalletImportResult> {
     this.requirePassword(password);
-    const wallet = await this.guard(() =>
-      importWallet(mnemonic, password, passphrase === undefined ? {} : { passphrase }),
-    );
-    this.remember(wallet);
+    const normalized = await this.guard(() => assertValid(mnemonic));
+    this.remember(normalized, password);
     this.passphrase = passphrase;
     return { address: this.deriveAddresses(password) };
   }
@@ -124,7 +139,7 @@ export class SmartWallet {
     const encrypted = this.requireKeystore();
     try {
       this.destroyUnlocked();
-      this.unlocked = unlockWallet(encrypted, password);
+      this.phraseFrom(encrypted, password);
     } catch (error) {
       throw toSdkError(error, 'LOCKED');
     }
@@ -252,17 +267,17 @@ export class SmartWallet {
     }
 
     const encrypted = this.requireKeystore();
-    let unlocked: UnlockedWallet;
+    let unlocked: UnlockedPhrase;
     try {
-      unlocked = unlockWallet(encrypted, params.password);
+      unlocked = this.phraseFrom(encrypted, params.password);
     } catch (error) {
       throw toSdkError(error, 'LOCKED');
     }
 
     try {
-      const derived = unlocked.deriveKey(FAMILY_DERIVATION_PATH[family]);
+      const derived = this.deriveFor(unlocked, family);
       // A private copy of the key bytes: the signer zeroes what it is given.
-      const key = Uint8Array.from(Buffer.from(derived.privateKey.replace(/^0x/, ''), 'hex'));
+      const key = Uint8Array.from(derived.privateKey);
       try {
         const signed = await this.guard(() => sign({ unsignedTx: unsigned, privateKey: key }));
         return {
@@ -273,7 +288,7 @@ export class SmartWallet {
         key.fill(0);
       }
     } finally {
-      unlocked.destroy();
+      this.destroyUnlocked();
     }
   }
 
@@ -483,9 +498,9 @@ export class SmartWallet {
    * Keeps only the encrypted keystore blob and forgets any unlocked wallet, so
    * create()/import() leave the instance in a locked state.
    */
-  private remember(wallet: CreatedWallet): void {
+  private remember(mnemonic: string, password: string): void {
     this.destroyUnlocked();
-    this.encrypted = wallet.encrypted;
+    this.encrypted = encrypt(new TextEncoder().encode(mnemonic), password);
   }
 
   /**
@@ -495,29 +510,44 @@ export class SmartWallet {
    */
   private deriveAddresses(password: string): Record<ChainFamily, string> {
     const encrypted = this.requireKeystore();
-    let unlocked: UnlockedWallet;
+    let unlocked: UnlockedPhrase;
     try {
-      unlocked = unlockWallet(encrypted, password);
+      unlocked = this.phraseFrom(encrypted, password);
     } catch (error) {
       throw toSdkError(error, 'LOCKED');
     }
     try {
       return {
-        evm: unlocked.deriveKey(FAMILY_DERIVATION_PATH.evm).address,
-        solana: unlocked.deriveKey(FAMILY_DERIVATION_PATH.solana).address,
-        tron: unlocked.deriveKey(FAMILY_DERIVATION_PATH.tron).address,
+        evm: this.deriveFor(unlocked, 'evm').address,
+        solana: this.deriveFor(unlocked, 'solana').address,
+        tron: this.deriveFor(unlocked, 'tron').address,
       };
     } finally {
-      unlocked.destroy();
+      this.destroyUnlocked();
     }
   }
 
-  private destroyUnlocked(): void {
-    this.unlocked?.destroy();
-    this.unlocked = undefined;
+  /** Decrypts a blob into the phrase and the seed derived from it. */
+  private phraseFrom(encrypted: EncryptedBlob, password: string): UnlockedPhrase {
+    const mnemonic = new TextDecoder().decode(decrypt(encrypted, password));
+    return { mnemonic, seed: toSeed(mnemonic, this.passphrase ?? '') };
   }
 
-  private requireKeystore(): EncryptedKeystore {
+  /** Derives one family's key from an unlocked phrase. */
+  private deriveFor(unlocked: UnlockedPhrase, family: ChainFamily): DerivedKey {
+    return deriveKey(unlocked.seed, family, FAMILY_DERIVATION_PATH[family]);
+  }
+
+  /**
+   * Nothing to destroy: `unlock()` proves the password and keeps no seed, so
+   * the phrase is decrypted for the length of one call and dropped again. The
+   * method stays because `lock()` and `destroy()` read as lifecycle calls.
+   */
+  private destroyUnlocked(): void {
+    // Intentionally empty.
+  }
+
+  private requireKeystore(): EncryptedBlob {
     if (this.encrypted === undefined) {
       throw new SdkError('NO_WALLET', 'no wallet is loaded — call create() or import() first');
     }

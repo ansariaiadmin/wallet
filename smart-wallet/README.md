@@ -1,21 +1,20 @@
 # Smart Wallet
 
 Monorepo for the Smart Wallet platform — a pnpm workspace with five packages:
-`core` (domain), `router` (dispatch), `api` (application surface), `sdk` (client)
-and `keys` (key management and HD signing).
+`core` (domain), `router` (dispatch), `api` (application surface), `sdk` (the
+`SmartWallet` class) and `keys` (the only key layer).
 
 ## Layout
 
 ```
 smart-wallet/
 ├── packages/
-│   ├── core/     # domain primitives: money, ledger postings, commands, errors,
-│   │             # plus the keystore (BIP-39, BIP-32, SLIP-0010 ed25519, AES-256-GCM)
+│   ├── core/     # domain primitives: money, oracle, risk, signer, tx-builder, cache
 │   ├── chains/   # multi-chain RPC layer: EVM (viem), Solana (web3.js), TRON (TronGrid)
 │   ├── router/   # typed route → handler registry
 │   ├── api/      # wallet application surface wired on top of core + router
-│   ├── keys/     # key management: BIP-39, BIP-32/SLIP-0010, AES-256-GCM store, signers
-│   └── sdk/      # typed client over an injectable transport
+│   ├── keys/     # the only key layer: BIP-39, BIP-32/SLIP-0010, AES-256-GCM, signers
+│   └── sdk/      # `SmartWallet`: one wallet surface over core + chains + keys
 ├── eslint.config.mjs      # shared ESLint flat config
 ├── tsconfig.base.json     # shared strict TS config + path aliases
 └── pnpm-workspace.yaml

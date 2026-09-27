@@ -1,4 +1,4 @@
-import { DEFAULT_EVM_PATH, DEFAULT_SOLANA_PATH, DEFAULT_TRON_PATH } from '@wallet/core';
+import { pathFor } from '@wallet/keys';
 import type { ChainId } from '@wallet/chains';
 import type { ChainFamily, NetworkId } from './types';
 
@@ -62,11 +62,17 @@ export const NETWORK_IS_TESTNET: Readonly<Record<NetworkId, boolean>> = {
   'tron-shasta': true,
 };
 
-/** Default BIP-44 derivation path per family. */
+/**
+ * Default BIP-44 derivation path per family.
+ *
+ * The values come from `@wallet/keys` so the repo carries one definition of a
+ * default path: what the sdk derives with `deriveKey` is byte-identical to what
+ * `deriveEvm`/`deriveSolana`/`deriveTron` derive from a mnemonic.
+ */
 export const FAMILY_DERIVATION_PATH: Readonly<Record<ChainFamily, string>> = {
-  evm: DEFAULT_EVM_PATH,
-  solana: DEFAULT_SOLANA_PATH,
-  tron: DEFAULT_TRON_PATH,
+  evm: pathFor('evm'),
+  solana: pathFor('solana'),
+  tron: pathFor('tron'),
 };
 
 /** True when `value` is a network id the SDK knows. */
