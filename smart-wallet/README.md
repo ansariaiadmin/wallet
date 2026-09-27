@@ -228,6 +228,30 @@ production. A _malformed_ value throws at startup rather than being ignored:
 `JWT_SECRET=short` failing loudly is what stops a deployment signing tokens
 with a key nobody chose.
 
+## Observability
+
+Every `/api/v1` request is timed, counted and labelled by route pattern, and
+`/health` reports what the app has served. Nothing is logged that could be a
+secret: `redacted()` turns a password into `{ present: true }`.
+
+```bash
+curl localhost:3000/api/v1/metrics                  # Prometheus text
+curl -H 'accept: application/json' localhost:3000/api/v1/metrics
+curl localhost:3000/api/v1/health
+```
+
+```
+wallet_http_requests_total{route="/api/v1/price/:symbol"} 2
+wallet_http_errors_total{route="/api/v1/price/:symbol"} 0
+wallet_http_duration_ms_bucket{route="/api/v1/price/:symbol",le="5"} 1
+wallet_uptime_seconds 42.118
+```
+
+The registry is a value, not a module: two apps in one process keep separate
+counters, which is the same rule the tx store and the cache stores follow. Logs
+are one JSON object per line, with `ts`, `level`, `msg` first so two lines for
+the same event diff cleanly. `createApp({ logger: nullLogger })` silences a test.
+
 ## CI
 
 `.github/workflows/ci.yml` runs lint + test on every push and pull request to

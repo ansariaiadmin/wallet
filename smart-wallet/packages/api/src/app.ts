@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import {
   CachedOracle,
   CachedRiskAssessor,
@@ -18,9 +19,12 @@ import { authRoutes } from './auth/router';
 import { MemoryUserStore, type UserStore } from './auth/user-store';
 import type { KeyStore } from '@wallet/keys';
 import { rateLimitMiddleware, RateLimiter } from './rate-limit';
+import { createLogger, type Logger } from './logger';
+import { MetricsRegistry } from './metrics';
 import { cacheRoutes } from './routes/cache';
 import { TxStore } from './tx-status';
 import { healthRoutes } from './routes/health';
+import { metricsRoutes } from './routes/metrics';
 import { priceRoutes } from './routes/price';
 import { quoteRoutes } from './routes/quote';
 import { riskRoutes } from './routes/risk';
@@ -79,6 +83,13 @@ export interface AppDeps {
    * instance to several apps when they must agree on what was broadcast.
    */
   readonly txStore?: TxStore;
+  /**
+   * Where the API writes structured logs. Defaults to one JSON line per event
+   * on the console; pass {@link nullLogger} to silence a test.
+   */
+  readonly logger?: Logger;
+  /** Counters served at `/metrics`. Defaults to one registry per app. */
+  readonly metrics?: MetricsRegistry;
 }
 
 /**
@@ -88,12 +99,19 @@ export interface AppDeps {
  * the core, router or chains packages, or anything unexpected — is rendered as
  * the same JSON body, so a caller never sees a stack trace.
  */
-export function withErrorHandler(app: Hono): Hono {
+export function withErrorHandler(app: Hono, logger: Logger = createLogger()): Hono {
   app.onError((error, c) => {
     const { status, body } = errorResponse(error);
     if (status === 500) {
-      // Logged for the operator, never sent to the client.
-      console.error('unhandled API error:', error);
+      // Logged for the operator, never sent to the client. The message is the
+      // only field that can carry request data, and the handler is the only
+      // place it is written, so nothing secret reaches a log line.
+      logger.error('unhandled API error', {
+        path: c.req.path,
+        method: c.req.method,
+        code: (body as { code?: string }).code,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     return c.json(body, status);
   });
@@ -109,7 +127,9 @@ export function withErrorHandler(app: Hono): Hono {
  * `@hono/node-server`, a worker, or `app.request()` in tests).
  */
 export function createApp(deps: AppDeps = {}): Hono {
-  const app = withErrorHandler(new Hono());
+  const logger = deps.logger ?? createLogger();
+  const metrics = deps.metrics ?? new MetricsRegistry();
+  const app = withErrorHandler(new Hono(), logger);
 
   app.notFound((c) =>
     c.json({ error: `no route for ${c.req.method} ${c.req.path}`, code: 'NOT_FOUND' }, 404),
@@ -117,6 +137,8 @@ export function createApp(deps: AppDeps = {}): Hono {
 
   // Registered first so every /api/v1 answer is counted and stamped.
   app.use('/api/v1/*', rateLimitMiddleware(deps.rateLimiter ?? new RateLimiter()));
+
+  app.use(observabilityMiddleware(logger, metrics));
 
   const price = deps.price ?? createCachedOracle();
   const risk = deps.risk ?? createCachedRisk();
@@ -134,7 +156,7 @@ export function createApp(deps: AppDeps = {}): Hono {
     }),
   );
 
-  app.route('/api/v1', healthRoutes());
+  app.route('/api/v1', healthRoutes({ registry: metrics }));
   app.route('/api/v1', priceRoutes(price));
   app.route('/api/v1', riskRoutes(risk));
   app.route('/api/v1', quoteRoutes(createSwapRouter()));
@@ -146,6 +168,31 @@ export function createApp(deps: AppDeps = {}): Hono {
   app.route('/api/v1', broadcastRoutes({ store: txStore }));
   app.route('/api/v1', statusRoutes({ store: txStore }));
   app.route('/api/v1', cacheRoutes({ price, risk }));
+  app.route('/api/v1', metricsRoutes({ registry: metrics }));
 
   return app;
+}
+
+/**
+ * Times every `/api/v1` request, counts it, and logs the ones that failed.
+ *
+ * The route label is the matched path with parameters left out, so
+ * `/tx/ethereum/0xabc/status` counts as `/tx/:network/:hash/status` and the
+ * series stays bounded by the number of routes rather than by traffic.
+ */
+function observabilityMiddleware(logger: Logger, metrics: MetricsRegistry): MiddlewareHandler {
+  return async (c, next) => {
+    const started = Date.now();
+    await next();
+    const durationMs = Date.now() - started;
+    const route = c.req.routePath || c.req.path;
+    const status = c.res.status;
+    metrics.record(route, status, durationMs);
+    if (status >= 500) {
+      logger.error('request failed', { route, status, durationMs });
+    } else if (status >= 400) {
+      // A 4xx is a caller mistake, worth a warn and not worth waking anyone.
+      logger.warn('request rejected', { route, status, durationMs });
+    }
+  };
 }

@@ -1,5 +1,7 @@
 export * from './app';
 export * from './config';
+export * from './metrics';
+export * from './logger';
 export * from './auth/jwt';
 export * from './auth/middleware';
 export * from './auth/router';

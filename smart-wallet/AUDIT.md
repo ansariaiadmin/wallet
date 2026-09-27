@@ -259,9 +259,48 @@ Every claim in this file was re-checked after the last commit (`95fcf08`):
 | no reference to deleted code      | grep for `WalletApp`, `@core/commands`, `@core/types`, `LedgerPosting` across every package                                        | ✅ none                                                                |
 | README matches the code           | grep for the deleted surfaces                                                                                                      | ✅ none                                                                |
 
-**Final score: 7.7 / 10** — dead code 9.5, duplication 8.5, packaging 8.0,
-consistency 8.5, correctness 9.0, layering 6.0, docs 6.5, CI 5.0, security 8.0,
-ops 4.0.
+### After S6 — observability, and a CI that finally ran
+
+`packages/api/src/logger.ts` writes one JSON object per event (`ts`, `level`,
+`msg`, then fields, in a stable order so two lines for one event diff cleanly),
+with a level filter, a child logger and `redacted()` for anything that might be
+a secret. `packages/api/src/metrics.ts` is a `MetricsRegistry` — a value, not a
+module, so two apps in one process keep separate counters — exposed as
+Prometheus text at `/api/v1/metrics` and as JSON on `Accept`. `/api/v1/health`
+reports uptime, requests and errors instead of only `ok`.
+
+CI had never run on this repo: `main` is still the base scaffold and the
+workflow only watched `main`. PR #1 was opened, and its first run **failed in
+Test while the same code passed locally**. Two causes, both fixed rather than
+retried:
+
+1. The suite was not deterministic. `jwt.test.ts`'s "rejects a tampered token"
+   flipped the _last_ character of the signature, and a 32-byte HMAC is 43
+   base64url characters whose final one carries only four significant bits — the
+   two trailing bits are ignored by every decoder, so the flip sometimes
+   produced the same 32 bytes and the tampered token verified. A security test
+   passing for the wrong reason, some of the time. It now flips the first.
+2. Vitest's pool was unbounded and spawned one worker per package on a
+   two-core runner. `vitest.shared.ts` now bounds it (`maxForks: 2`) and sets
+   `retry: 0`, because a test that passes on a retry is a race and CI must not
+   hide one.
+
+The workflow also keeps the test log as an artifact and fails the job
+explicitly afterwards, because the first failure's log was unreachable and
+turned a five-minute diagnosis into a guess.
+
+Numbers: api 188 → 216 tests, monorepo 693 → **721 passed** with the same 5
+skipped, typecheck/lint/format clean, CI green on PR #1. Observability axis
+4.0 → 8.5, CI axis 5.0 → 8.0.
+
+**Score after S6: 8.4 / 10** — dead code 9.5, duplication 8.5, packaging 8.0,
+consistency 8.5, correctness 9.0, layering 6.0, docs 6.5, CI 8.0, security 8.0,
+ops 8.5.
+
+A 10 is not reachable from this sandbox and the file should say so rather than
+round up: the api still does not depend on `@wallet/sdk` (layering 6.0), there
+is no multi-wallet identity, and no live RPC or faucet coverage is possible
+here. Those are the three things standing between 8.4 and 10.
 
 Not claimed: live RPC or faucet coverage. This sandbox has no outbound HTTPS
 except the npm registry, so the 5 `RUN_INTEGRATION` tests stay skipped and no
