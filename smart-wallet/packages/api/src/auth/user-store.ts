@@ -52,9 +52,26 @@ export interface User {
   readonly username: string;
   /** `scrypt$N$r$p$salt$hash`, all hex. */
   readonly passwordHash: string;
-  /** Wallet the user owns. */
-  readonly walletId: string;
+  /** Every wallet this user owns. Never empty once `create` has returned. */
+  readonly walletIds: readonly string[];
   /** ISO timestamp of the registration. */
+  readonly createdAt: string;
+}
+
+/**
+ * A wallet a user owns.
+ *
+ * Separate from `User` because a user owns *many* of them, and because the
+ * record that names a wallet is not the record that authenticates its owner.
+ */
+export interface WalletRecord {
+  /** The wallet id, and the key the encrypted mnemonic is stored under. */
+  readonly walletId: string;
+  /** The user who owns it. */
+  readonly userId: string;
+  /** A label the owner chose; empty when they did not. */
+  readonly label: string;
+  /** ISO timestamp the wallet was created. */
   readonly createdAt: string;
 }
 
@@ -66,28 +83,83 @@ export interface UserStore {
   findByUsername(username: string): Promise<User | null>;
   /** The user with `id`, or `null`. */
   findById(id: string): Promise<User | null>;
+  /** Adds a wallet to a user; throws when the id is already taken. */
+  addWallet(userId: string, walletId: string, label?: string): Promise<WalletRecord>;
+  /** Every wallet a user owns, oldest first. */
+  wallets(userId: string): Promise<readonly WalletRecord[]>;
+  /** The wallet with `walletId`, or `null`. */
+  findWallet(walletId: string): Promise<WalletRecord | null>;
 }
 
-/** In-memory {@link UserStore}: two maps, no persistence, no I/O. */
+/** In-memory {@link UserStore}: no persistence, no I/O. */
 export class MemoryUserStore implements UserStore {
   private readonly byUsername = new Map<string, User>();
   private readonly byId = new Map<string, User>();
+  private readonly byWalletId = new Map<string, WalletRecord>();
 
   async create(username: string, passwordHash: string, walletId: string): Promise<User> {
     const name = requireUsername(username);
     if (this.byUsername.has(name)) {
       throw new ApiError(409, 'USERNAME_TAKEN', `username "${name}" is already registered`);
     }
+    // The first wallet is created with the user, so a user always owns at least
+    // one and `wallets()` is never empty for a user that exists.
+    const userId = `user_${randomBytes(8).toString('hex')}`;
+    const record = this.remember(userId, walletId, '');
     const user: User = {
-      id: `user_${randomBytes(8).toString('hex')}`,
+      id: userId,
       username: name,
       passwordHash,
-      walletId,
-      createdAt: new Date().toISOString(),
+      walletIds: [record.walletId],
+      createdAt: record.createdAt,
     };
     this.byUsername.set(name, user);
     this.byId.set(user.id, user);
     return user;
+  }
+
+  /**
+   * Registers a wallet against an already-created user.
+   *
+   * Split out because `create` needs a user id before it has a user object, and
+   * because the id-taken check belongs in exactly one place.
+   */
+  private remember(userId: string, walletId: string, label: string): WalletRecord {
+    const record: WalletRecord = {
+      walletId,
+      userId,
+      label,
+      createdAt: new Date().toISOString(),
+    };
+    this.byWalletId.set(walletId, record);
+    return record;
+  }
+
+  async addWallet(userId: string, walletId: string, label = ''): Promise<WalletRecord> {
+    const user = this.byId.get(userId);
+    if (user === undefined) {
+      throw new ApiError(404, 'NOT_FOUND', 'no such user');
+    }
+    if (this.byWalletId.has(walletId)) {
+      throw new ApiError(409, 'WALLET_TAKEN', 'that wallet id is already registered');
+    }
+    const record = this.remember(userId, walletId, label);
+    this.byId.set(userId, { ...user, walletIds: [...user.walletIds, walletId] });
+    return record;
+  }
+
+  async wallets(userId: string): Promise<readonly WalletRecord[]> {
+    const user = this.byId.get(userId);
+    if (user === undefined) {
+      return [];
+    }
+    return user.walletIds
+      .map((walletId) => this.byWalletId.get(walletId))
+      .filter((record): record is WalletRecord => record !== undefined);
+  }
+
+  async findWallet(walletId: string): Promise<WalletRecord | null> {
+    return this.byWalletId.get(walletId) ?? null;
   }
 
   async findByUsername(username: string): Promise<User | null> {
@@ -103,10 +175,11 @@ export class MemoryUserStore implements UserStore {
     return this.byId.size;
   }
 
-  /** Forgets every user. */
+  /** Forgets every user and every wallet. */
   clear(): void {
     this.byUsername.clear();
     this.byId.clear();
+    this.byWalletId.clear();
   }
 }
 

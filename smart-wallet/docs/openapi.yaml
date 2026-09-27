@@ -424,7 +424,20 @@ paths:
                     type: string
                   user:
                     type: object
-                    additionalProperties: true
+                    required: [id, username, walletIds, createdAt]
+                    properties:
+                      id:
+                        type: string
+                      username:
+                        type: string
+                      walletIds:
+                        type: array
+                        description: Every wallet the user owns; registering always makes one.
+                        items:
+                          type: string
+                      createdAt:
+                        type: string
+                        format: date-time
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
@@ -491,6 +504,84 @@ paths:
                   user:
                     type: object
                     additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/wallets:
+    get:
+      tags: [auth]
+      summary: Every wallet the caller owns
+      operationId: listWallets
+      responses:
+        '200':
+          description: The caller's wallets, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wallets]
+                properties:
+                  wallets:
+                    type: array
+                    items:
+                      type: object
+                      required: [walletId, label, createdAt]
+                      properties:
+                        walletId:
+                          type: string
+                          description: Also the key the encrypted mnemonic is stored under.
+                        label:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [auth]
+      summary: Mint another wallet for the caller
+      description: |
+        A user owns any number of wallets, and each one gets its own keystore
+        slot. The bearer token authorises the mint; when the instance has a
+        keystore the password is asked for again, because encrypting a phrase
+        needs the secret and a token deliberately does not carry one.
+      operationId: createWallet
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  description: At most 64 characters.
+                password:
+                  type: string
+                  description: Required only when the instance has a keystore.
+      responses:
+        '201':
+          description: The new wallet, and the phrase when a keystore is configured.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [walletId, label, createdAt]
+                properties:
+                  walletId:
+                    type: string
+                  label:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  mnemonic:
+                    type: string
+                    description: |
+                      The BIP-39 phrase, returned once. Present only when a
+                      keystore is configured, and never logged.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
 

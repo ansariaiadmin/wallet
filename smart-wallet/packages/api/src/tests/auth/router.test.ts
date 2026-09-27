@@ -65,6 +65,15 @@ afterEach(async () => {
   }
 });
 
+/** The wallet a response names. */
+function walletIdOf(body: { user: { walletIds: readonly string[] } }): string {
+  const walletId = body.user.walletIds[0];
+  if (walletId === undefined) {
+    throw new Error('the response named no wallet');
+  }
+  return walletId;
+}
+
 describe('POST /auth/register', () => {
   it('creates a user and a wallet and answers 201 with a token', async () => {
     const response = await register();
@@ -72,11 +81,11 @@ describe('POST /auth/register', () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as {
       token: string;
-      user: { id: string; username: string; walletId: string };
+      user: { id: string; username: string; walletIds: readonly string[] };
     };
     expect(body.token.split('.')).toHaveLength(3);
     expect(body.user.username).toBe(USERNAME);
-    expect(body.user.walletId).toMatch(/^wallet_[0-9a-f-]{36}$/);
+    expect(walletIdOf(body)).toMatch(/^wallet_[0-9a-f-]{36}$/);
     expect(body.user.id).toMatch(/^user_/);
   });
 
@@ -93,12 +102,12 @@ describe('POST /auth/register', () => {
     const target = app();
     const body = (await (await register(target)).json()) as {
       token: string;
-      user: { id: string; walletId: string };
+      user: { id: string; walletIds: readonly string[] };
     };
     const payload = await verifyToken(body.token, SECRET);
 
     expect(payload.userId).toBe(body.user.id);
-    expect(payload.walletId).toBe(body.user.walletId);
+    expect(payload.walletIds[0]).toBe(walletIdOf(body));
   });
 
   it('rejects a duplicate username with 409', async () => {
@@ -152,12 +161,15 @@ describe('POST /auth/register', () => {
     const keystore = new MemoryKeyStore();
     const target = app({ keystore });
     const response = await register(target);
-    const body = (await response.json()) as { user: { walletId: string }; mnemonic: string };
+    const body = (await response.json()) as {
+      user: { walletIds: readonly string[] };
+      mnemonic: string;
+    };
 
     expect(body.mnemonic.split(' ')).toHaveLength(12);
     // The same phrase is readable back with the account password.
-    expect(await keystore.load(body.user.walletId, PASSWORD)).toBe(body.mnemonic);
-    await expect(keystore.load(body.user.walletId, OTHER_PASSWORD)).rejects.toMatchObject({
+    expect(await keystore.load(walletIdOf(body), PASSWORD)).toBe(body.mnemonic);
+    await expect(keystore.load(walletIdOf(body), OTHER_PASSWORD)).rejects.toMatchObject({
       code: 'WRONG_PASSWORD',
     });
   });
@@ -172,11 +184,11 @@ describe('POST /auth/register', () => {
     tmp = await mkdtemp(join(tmpdir(), 'wallet-api-auth-'));
     const keystore = new FileKeyStore(tmp);
     const body = (await (await register(app({ keystore }))).json()) as {
-      user: { walletId: string };
+      user: { walletIds: readonly string[] };
       mnemonic: string;
     };
 
-    expect(await keystore.load(body.user.walletId, PASSWORD)).toBe(body.mnemonic);
+    expect(await keystore.load(walletIdOf(body), PASSWORD)).toBe(body.mnemonic);
   });
 });
 
@@ -263,10 +275,10 @@ describe('GET /auth/me', () => {
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      user: { userId: string; walletId: string };
+      user: { userId: string; walletIds: readonly string[] };
     };
     expect(body.user.userId).toMatch(/^user_/);
-    expect(body.user.walletId).toMatch(/^wallet_/);
+    expect(walletIdOf(body)).toMatch(/^wallet_/);
   });
 
   it('never answers with the password hash', async () => {
@@ -389,5 +401,134 @@ describe('ApiError', () => {
     expect(error.status).toBe(409);
     expect(error.code).toBe('USERNAME_TAKEN');
     expect(error.name).toBe('ApiError');
+  });
+});
+
+describe('POST /auth/wallets', () => {
+  /**
+   * Registers `username` on `target` and returns a bearer token for them.
+   *
+   * The app is passed in rather than built here because every call to `app()`
+   * makes a fresh user store: a token minted on one app means nothing on the
+   * next one.
+   */
+  async function tokenFor(target: ReturnType<typeof createApp>, username: string): Promise<string> {
+    const response = await target.request('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username, password: PASSWORD }),
+    });
+    const body = (await response.json()) as { token: string };
+    return body.token;
+  }
+
+  /** `POST /auth/wallets` on `target` as the holder of `token`. */
+  async function mint(
+    target: ReturnType<typeof createApp>,
+    token: string,
+    body: Record<string, string>,
+  ): Promise<Response> {
+    return target.request('/api/v1/auth/wallets', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** `GET /auth/wallets` on `target` as the holder of `token`. */
+  async function list(
+    target: ReturnType<typeof createApp>,
+    token: string,
+  ): Promise<{ wallets: { walletId: string; label: string }[] }> {
+    const response = await target.request('/api/v1/auth/wallets', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return (await response.json()) as { wallets: { walletId: string; label: string }[] };
+  }
+
+  it('mints a second wallet for a user who already has one', async () => {
+    const target = app();
+
+    const token = await tokenFor(target, 'wallet-owner');
+    const before = await list(target, token);
+    expect(before.wallets).toHaveLength(1);
+
+    const response = await mint(target, token, { label: 'savings' });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { walletId: string; label: string; mnemonic?: string };
+    expect(body.walletId).toMatch(/^wallet_/);
+    expect(body.label).toBe('savings');
+    // Without a keystore no phrase is created at all.
+    expect(body.mnemonic).toBeUndefined();
+
+    const after = await list(target, token);
+    expect(after.wallets.map((wallet) => wallet.label)).toEqual(['', 'savings']);
+  });
+
+  it('refuses to mint without a token', async () => {
+    const response = await app().request('/api/v1/auth/wallets', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('gives every wallet its own keystore slot', async () => {
+    const keystore = new MemoryKeyStore();
+    const target = app({ keystore });
+
+    const token = await tokenFor(target, 'multi-wallet');
+    const first = await mint(target, token, { password: PASSWORD });
+    const second = await mint(target, token, { password: PASSWORD });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+
+    const firstBody = (await first.json()) as { walletId: string; mnemonic: string };
+    const secondBody = (await second.json()) as { walletId: string; mnemonic: string };
+    expect(firstBody.walletId).not.toBe(secondBody.walletId);
+
+    // Each phrase is stored under its own wallet id and decrypts to its own
+    // value: one slot, one wallet.
+    expect(await keystore.load(firstBody.walletId, PASSWORD)).toBe(firstBody.mnemonic);
+    expect(await keystore.load(secondBody.walletId, PASSWORD)).toBe(secondBody.mnemonic);
+    expect(firstBody.mnemonic).not.toBe(secondBody.mnemonic);
+  });
+
+  it('asks for the password again when a keystore is configured', async () => {
+    const target = app({ keystore: new MemoryKeyStore() });
+
+    const token = await tokenFor(target, 'needs-password');
+    const response = await mint(target, token, {});
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('INVALID_INPUT');
+  });
+
+  it('lists every wallet the user owns, oldest first', async () => {
+    const target = app();
+
+    const token = await tokenFor(target, 'list-owner');
+    for (const label of ['one', 'two', 'three']) {
+      await mint(target, token, { label });
+    }
+
+    const after = await list(target, token);
+    expect(after.wallets.map((wallet) => wallet.label)).toEqual(['', 'one', 'two', 'three']);
+    expect(new Set(after.wallets.map((wallet) => wallet.walletId)).size).toBe(4);
+  });
+
+  it('does not let one user see another user wallets', async () => {
+    const target = app();
+
+    const mine = await list(target, await tokenFor(target, 'user-a'));
+    const theirs = await list(target, await tokenFor(target, 'user-b'));
+
+    expect(mine.wallets.map((wallet) => wallet.walletId)).not.toEqual(
+      theirs.wallets.map((wallet) => wallet.walletId),
+    );
   });
 });

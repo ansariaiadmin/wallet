@@ -70,6 +70,8 @@ async function servedRoutes(): Promise<string[]> {
     ['POST', '/api/v1/auth/register', '/api/v1/auth/register'],
     ['POST', '/api/v1/auth/login', '/api/v1/auth/login'],
     ['GET', '/api/v1/auth/me', '/api/v1/auth/me'],
+    ['GET', '/api/v1/auth/wallets', '/api/v1/auth/wallets'],
+    ['POST', '/api/v1/auth/wallets', '/api/v1/auth/wallets'],
     ['DELETE', '/api/v1/auth/logout', '/api/v1/auth/logout'],
     ['GET', '/api/v1/cache/stats', '/api/v1/cache/stats'],
     ['DELETE', '/api/v1/cache', '/api/v1/cache'],
@@ -121,7 +123,7 @@ describe('docs/openapi.yaml', () => {
     const operationIds = spec.match(/^ {6}operationId: \S+$/gm) ?? [];
     const responses = spec.match(/^ {6}responses:$/gm) ?? [];
 
-    expect(operationIds.length).toBeGreaterThanOrEqual(14);
+    expect(operationIds.length).toBeGreaterThanOrEqual(16);
     // One `responses` block per operation.
     expect(responses.length).toBe(operationIds.length);
   });

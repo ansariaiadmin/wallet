@@ -19,7 +19,7 @@ describe('MemoryUserStore', () => {
     const user = await store.create('alice', await hashPassword(PASSWORD), 'wallet_1');
 
     expect(user.username).toBe('alice');
-    expect(user.walletId).toBe('wallet_1');
+    expect(user.walletIds[0]).toBe('wallet_1');
     expect(user.id).toMatch(/^user_[0-9a-f]{16}$/);
     expect(user.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect((await store.findByUsername('alice'))?.id).toBe(user.id);
@@ -50,7 +50,7 @@ describe('MemoryUserStore', () => {
 
     await expect(store.create('alice', 'x', 'wallet_2')).rejects.toBeInstanceOf(ApiError);
     const stored = await store.findByUsername('alice');
-    expect(stored?.walletId).toBe('wallet_1');
+    expect(stored?.walletIds[0]).toBe('wallet_1');
   });
 
   it('returns null for an unknown username and id', async () => {

@@ -78,8 +78,8 @@ describe('startServer', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(me.status).toBe(200);
-    expect((await me.json()) as { user: { walletId: string } }).toMatchObject({
-      user: { walletId: expect.stringMatching(/^wallet_/) as unknown as string },
+    expect((await me.json()) as { user: { walletIds: string[] } }).toMatchObject({
+      user: { walletIds: [expect.stringMatching(/^wallet_/) as unknown as string] },
     });
 
     const logout = await request(base, '/api/v1/auth/logout', {
@@ -111,11 +111,14 @@ describe('startServer', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username: 'alice', password: PASSWORD }),
     });
-    const body = (await response.json()) as { user: { walletId: string }; mnemonic: string };
+    const body = (await response.json()) as {
+      user: { walletIds: readonly string[] };
+      mnemonic: string;
+    };
 
     expect(body.mnemonic.split(' ')).toHaveLength(12);
     const files = await readdir(dir);
-    expect(files).toEqual([`${body.user.walletId}.enc`]);
+    expect(files).toEqual([`${body.user.walletIds[0]}.enc`]);
     await rm(dir, { recursive: true, force: true });
   });
 

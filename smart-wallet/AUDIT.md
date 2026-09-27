@@ -388,7 +388,36 @@ would have merged a validator into an encoder.
 Numbers: api 216 → 222, monorepo **737 passed** with the same 5 skipped.
 typecheck, lint and format clean.
 
-**Score after S9: 9.23 / 10.**
+### After S10 — a user owns many wallets
+
+`walletId` is now a first-class key. `UserStore` gained `addWallet`,
+`wallets(userId)` and `findWallet(walletId)`; `User.walletId` became
+`User.walletIds`; the token carries every wallet the caller owns. Two new
+routes: `POST /auth/wallets` mints one, `GET /auth/wallets` lists them.
+
+The keystore namespace is the wallet id itself, which is what makes the
+guarantee real rather than nominal: each phrase is encrypted and stored under
+its own id, so two wallets can never share an entry, and a test asserts exactly
+that by loading both phrases back out of one `MemoryKeyStore`.
+
+The password is asked for again on a mint, and that is a decision rather than an
+oversight: encrypting a phrase needs the secret, and a bearer token
+deliberately does not carry one. Caching the password would turn a short-lived
+token into a permanent one. Without a keystore configured no phrase is created
+at all — the wallet is an id the caller can bind a key to later.
+
+Numbers: api 222 → 228, monorepo **743 passed** with the same 5 skipped.
+typecheck, lint and format clean. OpenAPI grew to 17 operations, still verified
+by the round-trip test.
+
+**Score after S10: 9.23 / 10 — unchanged, and deliberately so.**
+
+This phase closes a _scope_ gap, not a score gap: "one user owns one wallet" was
+in the "what is not a 10" list, but multi-wallet identity is a feature, not one of
+the ten scored axes, so adding it does not move any of them. Writing 9.5 here
+because a feature shipped would repeat exactly the mistake the previous section
+corrected. The aggregate moves when an axis moves, and the only axes left with
+room are the four below.
 
 > A correction worth recording: the previous version of this file claimed
 > 9.4 / 10 while listing axis scores that weight to 9.23. The arithmetic above
@@ -424,11 +453,9 @@ unchanged either way.
    `RUN_E2E` suite. A wallet with zero verified live broadcast cannot be scored
    a 10 on correctness, however good its unit tests are. This is the single
    largest remaining gap and it is not closable from here.
-2. **No multi-wallet identity.** One user owns one wallet; `walletId` is not a
-   first-class key with its own keystore namespace.
-3. **Packaging 8.0.** Every package exports source; nothing is built to `dist`
+2. **Packaging 8.0.** Every package exports source; nothing is built to `dist`
    and nothing is publishable as-is.
-4. **Layering 8.0.** `/quote` and the broadcast payload still sit outside the
+3. **Layering 8.0.** `/quote` and the broadcast payload still sit outside the
    wallet, for the contract reason above.
 
 ### What still stands between this and a 10

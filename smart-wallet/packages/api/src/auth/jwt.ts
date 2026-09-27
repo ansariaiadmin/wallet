@@ -24,7 +24,8 @@ export interface TokenPayload extends JWTPayload {
   /** User the token belongs to. */
   readonly userId: string;
   /** Wallet the user owns; the signing phase needs it. */
-  readonly walletId: string;
+  /** Every wallet the user owns; a user can own more than one. */
+  readonly walletIds: readonly string[];
   /** Unique token id, the key {@link TokenRevocation} revokes by. */
   readonly jti?: string;
 }
