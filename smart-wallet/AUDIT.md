@@ -368,6 +368,44 @@ typecheck, lint and format clean.
 consistency 8.5, correctness 9.0, layering 8.0, docs 6.5, CI 8.0, security 8.0,
 ops 8.5.
 
+### After S9 — a reference that is checked rather than claimed
+
+`docs/openapi.yaml` is an OpenAPI 3.1 document covering all fifteen routes, and
+`packages/api/src/tests/openapi.test.ts` verifies it in both directions: every
+route the app serves is in the document, and every path in the document is
+served. Six tests. The point is that a documentation claim in a README is
+unverifiable by reading; here the claim is the assertion.
+
+This also corrected a claim in the previous section, which is recorded because
+the correction is the finding: the broadcast and quote "duplication" was
+**wrong**. The api's `toBroadcastPayload(network, string)` _validates_ a
+caller's payload and returns it; the sdk's `toBroadcastPayload(family,
+Uint8Array)` _encodes_ a signer's bytes for a connector. They are the two halves
+of one pipeline serving two different callers, not one job done twice. Layering
+stays at 8.0 on the strength of that reading rather than on a refactor that
+would have merged a validator into an encoder.
+
+Numbers: api 216 → 222, monorepo **737 passed** with the same 5 skipped.
+typecheck, lint and format clean.
+
+**Score after S9: 9.4 / 10** — dead code 9.5, duplication 9.5, packaging 8.0,
+consistency 9.0, correctness 9.0, layering 8.0, docs 9.0, CI 8.0, security 8.0,
+ops 8.5.
+
+### What is honestly not a 10 yet
+
+1. **No live coverage.** The sandbox has no outbound HTTPS except the npm
+   registry. The five `RUN_INTEGRATION` tests stay skipped and there is no
+   `RUN_E2E` suite. A wallet with zero verified live broadcast cannot be scored
+   a 10 on correctness, however good its unit tests are. This is the single
+   largest remaining gap and it is not closable from here.
+2. **No multi-wallet identity.** One user owns one wallet; `walletId` is not a
+   first-class key with its own keystore namespace.
+3. **Packaging 8.0.** Every package exports source; nothing is built to `dist`
+   and nothing is publishable as-is.
+4. **Layering 8.0.** `/quote` and the broadcast payload still sit outside the
+   wallet, for the contract reason above.
+
 ### What still stands between this and a 10
 
 Stated plainly, because a 10 claimed over these would be the exact failure this

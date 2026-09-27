@@ -1,0 +1,594 @@
+openapi: 3.1.0
+info:
+  title: Smart Wallet API
+  version: 1.0.0
+  summary: A wallet that runs standalone or embedded, with no key material on the server.
+  description: |
+    Every route lives under `/api/v1`. The service never holds a private key:
+    `POST /tx/build` returns an *unsigned* transaction for the caller to sign
+    elsewhere, and `POST /tx/broadcast` only forwards a payload it is given.
+
+    Configuration is read from the environment — see `.env.example`. Without
+    `JWT_SECRET` a random secret is generated for the life of the process, so
+    every restart invalidates every token.
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local
+
+tags:
+  - name: health
+  - name: price
+  - name: risk
+  - name: transactions
+  - name: quotes
+  - name: auth
+  - name: cache
+  - name: metrics
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: Answers from memory — no dependency is called and no socket is opened.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: The process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, ts, uptimeSeconds, requests, errors]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  ts:
+                    type: integer
+                    description: Unix seconds when the answer was produced.
+                  uptimeSeconds:
+                    type: number
+                  requests:
+                    type: integer
+                  errors:
+                    type: integer
+
+  /api/v1/price/{symbol}:
+    get:
+      tags: [price]
+      summary: Aggregated USD price for one symbol
+      operationId: getPrice
+      security: []
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+            examples: [ETH, BTC, USDC]
+      responses:
+        '200':
+          description: The price, and how confident the oracle is in it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [symbol, price, change24h, confidence, ts]
+                properties:
+                  symbol:
+                    type: string
+                  price:
+                    type: number
+                  change24h:
+                    type: integer
+                    description: 24 hour change in basis points, signed.
+                  confidence:
+                    type: string
+                    enum: [high, medium]
+                  ts:
+                    type: integer
+                    description: Unix seconds the oracle produced the price.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: No provider knows this symbol.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /api/v1/risk/address:
+    post:
+      tags: [risk]
+      summary: Screen an address
+      operationId: checkAddressRisk
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+                chain:
+                  type: string
+                  description: Optional chain hint the providers may use.
+      responses:
+        '200':
+          description: The merged verdict and the flags behind it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [overallRisk, flags, assessedAt]
+                properties:
+                  overallRisk:
+                    type: string
+                    enum: [none, low, medium, high, critical]
+                  flags:
+                    type: array
+                    items:
+                      type: object
+                      required: [level, reason, source]
+                      properties:
+                        level:
+                          type: string
+                          enum: [none, low, medium, high, critical]
+                        reason:
+                          type: string
+                        source:
+                          type: string
+                  assessedAt:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /api/v1/risk/token:
+    post:
+      tags: [risk]
+      summary: Screen a token symbol
+      operationId: checkTokenRisk
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol]
+              properties:
+                symbol:
+                  type: string
+                chain:
+                  type: string
+      responses:
+        '200':
+          description: The merged verdict and the flags behind it.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /api/v1/tx/build:
+    post:
+      tags: [transactions]
+      summary: Build an unsigned transaction
+      description: |
+        Runs through `SmartWallet.buildUnsigned`. Nothing is signed and no key
+        material exists in this process.
+      operationId: buildTx
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chain, type, from, to, amount]
+              properties:
+                chain:
+                  type: string
+                  enum: [evm, solana, tron]
+                type:
+                  type: string
+                  enum: [native, token]
+                from:
+                  type: string
+                to:
+                  type: string
+                amount:
+                  type: string
+                  description: Positive integer string in the smallest token unit.
+                tokenAddress:
+                  type: string
+                  description: Required when `type` is `token`.
+                decimals:
+                  type: integer
+                  description: Required when `type` is `token`; 0–255.
+      responses:
+        '200':
+          description: The unsigned transaction.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain, unsignedTx]
+                properties:
+                  chain:
+                    type: string
+                  unsignedTx:
+                    type: object
+                    additionalProperties: true
+        '400':
+          description: A field-level problem — a missing `tokenAddress`, decimals out of range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The builder refused the transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/tx/broadcast:
+    post:
+      tags: [transactions]
+      summary: Broadcast an already-signed transaction
+      description: |
+        Only forwards what it is given: it never signs, never derives keys and
+        never holds key material. The payload must match the family's encoding,
+        and the broadcast is remembered so a later status call can answer
+        without a chain read.
+      operationId: broadcastTx
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [network, signedTx]
+              properties:
+                network:
+                  type: string
+                  description: A network id from `NETWORK_IDS`.
+                signedTx:
+                  type: string
+                  description: |
+                    The signed transaction in the family's encoding: `0x`-prefixed
+                    hex on EVM, base64 or `0x`-hex on Solana, a JSON string on
+                    TRON.
+      responses:
+        '200':
+          description: The hash the chain returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [txHash, network, broadcastAt]
+                properties:
+                  txHash:
+                    type: string
+                  network:
+                    type: string
+                  broadcastAt:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: The connector refused the broadcast.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/tx/{network}/{txHash}/status:
+    get:
+      tags: [transactions]
+      summary: Read a transaction's status
+      operationId: getTxStatus
+      security: []
+      parameters:
+        - name: network
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: txHash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: |
+            `pending` or `confirmed` for a transaction this process broadcast,
+            `not_found` for anything it never saw. A connector that can read a
+            transaction answers instead.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, confirmations, checkedAt]
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, confirmed, failed, not_found]
+                  confirmations:
+                    type: integer
+                  checkedAt:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/quote:
+    post:
+      tags: [quotes]
+      summary: Best swap route plus every route found
+      operationId: getQuote
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromChain, toChain, fromToken, toToken, amount]
+              properties:
+                fromChain:
+                  type: string
+                toChain:
+                  type: string
+                fromToken:
+                  type: string
+                toToken:
+                  type: string
+                amount:
+                  type: string
+      responses:
+        '200':
+          description: The best route and every route the router found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [best, all]
+                properties:
+                  best:
+                    type: [object, 'null']
+                    additionalProperties: true
+                  all:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          description: No route exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Register a user and mint the first token
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  description: Encrypts the mnemonic when a keystore directory is configured.
+      responses:
+        '201':
+          description: The user, their wallet and a bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresIn, user]
+                properties:
+                  token:
+                    type: string
+                  expiresIn:
+                    type: string
+                  user:
+                    type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: The username is taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange credentials for a token
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: A bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresIn]
+                properties:
+                  token:
+                    type: string
+                  expiresIn:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Wrong credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: The caller behind a bearer token
+      operationId: me
+      responses:
+        '200':
+          description: The user and their wallet.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/logout:
+    delete:
+      tags: [auth]
+      summary: Revoke the caller's token
+      operationId: logout
+      responses:
+        '204':
+          description: The token no longer works.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/cache/stats:
+    get:
+      tags: [cache]
+      summary: Price and screening cache counters
+      operationId: cacheStats
+      security: []
+      responses:
+        '200':
+          description: Hits, misses and size for each cache.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/cache:
+    delete:
+      tags: [cache]
+      summary: Drop every cached price and verdict
+      operationId: clearCache
+      security: []
+      responses:
+        '204':
+          description: Both caches are empty.
+
+  /api/v1/metrics:
+    get:
+      tags: [metrics]
+      summary: Request counters
+      description: |
+        Prometheus text by default, JSON when the caller sends
+        `Accept: application/json`. A request is counted after it is answered,
+        so the body describes every *earlier* request.
+      operationId: metrics
+      security: []
+      responses:
+        '200':
+          description: Counters, per route pattern.
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid or revoked token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unavailable:
+      description: Every upstream provider failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          description: A stable code a caller can branch on.
+
+security:
+  - bearerAuth: []

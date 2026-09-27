@@ -251,6 +251,23 @@ const unsigned = await new SmartWallet().buildUnsigned({
 // unsigned.serialized is raw bytes; toHexPayload turns it into 0x02…
 ```
 
+## API reference
+
+`docs/openapi.yaml` is an OpenAPI 3.1 document covering every route, its
+parameters, its responses and its error codes.
+
+The document is **verified, not asserted**: `packages/api/src/tests/openapi.test.ts`
+serves every route, checks that each one appears in the document, and checks
+that the document names nothing the app does not serve. A route added without a
+doc — or a doc left behind by a deleted route — fails the suite, so the
+reference cannot drift from the implementation.
+
+```
+curl -s http://localhost:3000/api/v1/openapi.json   # if you serve it
+# or read the source of truth directly:
+cat docs/openapi.yaml
+```
+
 ## Observability
 
 Every `/api/v1` request is timed, counted and labelled by route pattern, and
