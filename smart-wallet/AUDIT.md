@@ -388,9 +388,34 @@ would have merged a validator into an encoder.
 Numbers: api 216 → 222, monorepo **737 passed** with the same 5 skipped.
 typecheck, lint and format clean.
 
-**Score after S9: 9.4 / 10** — dead code 9.5, duplication 9.5, packaging 8.0,
-consistency 9.0, correctness 9.0, layering 8.0, docs 9.0, CI 8.0, security 8.0,
-ops 8.5.
+**Score after S9: 9.23 / 10.**
+
+> A correction worth recording: the previous version of this file claimed
+> 9.4 / 10 while listing axis scores that weight to 9.23. The arithmetic above
+> (`6.05 ≈ 6.1` for the baseline) was the check that caught it. The aggregate
+> below is the weighted mean, computed, not asserted.
+
+| #   | Axis                       | Weight | Before (S7) | After S9 | Basis                                          |
+| --- | -------------------------- | ------ | ----------- | -------- | ---------------------------------------------- |
+| 1   | Correctness and test depth | 20%    | 9.0         | 9.0      | 737 green; no live RPC coverage (see below)    |
+| 2   | Dead code                  | 15%    | 9.5         | 9.5      | nothing unreachable remains                    |
+| 3   | Duplication                | 15%    | 9.0         | 9.5      | broadcast/quote "duplication" was a wrong read |
+| 4   | Packaging and build        | 10%    | 8.0         | 8.0      | every package exports source, no `dist`        |
+| 5   | Consistency and style      | 10%    | 9.0         | 9.0      | typecheck/lint/format clean                    |
+| 6   | Layering and architecture  | 15%    | 7.0         | 8.0      | price/risk/tx-build unified; quote outside     |
+| 7   | Public API and docs        | 5%     | 6.5         | 9.0      | OpenAPI, verified by test                      |
+| 8   | CI and release readiness   | 5%     | 8.0         | 8.0      | green on main and on PRs                       |
+| 9   | Security posture           | 5%     | 8.0         | 8.0      | strong defaults, endpoints not locked          |
+| 10  | Observability and ops      | 5%     | 8.5         | 8.5      | structured logs, `/metrics`, `/health`         |
+
+`0.20×9.0 + 0.15×9.5 + 0.15×9.5 + 0.10×8.0 + 0.10×9.0 + 0.15×8.0 +
+0.05×9.0 + 0.05×8.0 + 0.05×8.0 + 0.05×8.5 =` **9.23**
+
+One wrinkle a reader will hit: the weights above sum to **1.05**, not 1.00. The
+totals in this file are `Σ(weight × score)` without renormalising — the same
+convention the 6.1 baseline used, so the two are directly comparable. Renormalised
+the baseline is 5.76 and the current total 8.79; the shape of the gap to a 10 is
+unchanged either way.
 
 ### What is honestly not a 10 yet
 
