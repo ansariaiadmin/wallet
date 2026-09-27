@@ -17,12 +17,9 @@ import { CacheStore } from './store';
 /** How long a price stays fresh. Prices move fast, so this is short. */
 export const PRICE_CACHE_TTL_MS = 30_000;
 
-/** The process-wide price store, shared by every {@link CachedOracle}. */
-const priceStore = new CacheStore<string, TokenPrice>();
-
 /** What a {@link CachedOracle} accepts on top of {@link CacheOptions}. */
 export interface CachedOracleOptions extends CacheOptions {
-  /** Store to use; defaults to the process-wide price store. */
+  /** Store to use; defaults to a fresh one per instance. */
   readonly store?: CacheStore<string, TokenPrice>;
 }
 
@@ -34,7 +31,7 @@ export class CachedOracle {
   constructor(oracle: PriceOracle, options: CachedOracleOptions = {}) {
     this.oracle = oracle;
     this.ttlMs = options.ttlMs ?? PRICE_CACHE_TTL_MS;
-    this.store = options.store ?? priceStore;
+    this.store = options.store ?? new CacheStore<string, TokenPrice>();
   }
 
   /**
@@ -70,14 +67,4 @@ export class CachedOracle {
 export function priceKey(symbol: string, currency = 'USD'): string {
   const normalized = typeof symbol === 'string' ? symbol.trim().toUpperCase() : '';
   return `${normalized}:${currency.trim().toUpperCase()}`;
-}
-
-/** Drops every price cached by any {@link CachedOracle}. */
-export function clearPriceCache(): void {
-  priceStore.clear();
-}
-
-/** Counters of the process-wide price cache. */
-export function priceCacheStats(): CacheStats {
-  return priceStore.stats();
 }

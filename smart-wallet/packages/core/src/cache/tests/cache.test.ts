@@ -5,10 +5,6 @@ import {
   CachedRiskAssessor,
   PRICE_CACHE_TTL_MS,
   RISK_CACHE_TTL_MS,
-  clearPriceCache,
-  clearRiskCache,
-  priceCacheStats,
-  riskCacheStats,
 } from '../index';
 import { PriceOracle, RiskChecker, type PriceProvider, type RiskProvider } from '../../index';
 import type { RiskAssessment, TokenPrice } from '../../index';
@@ -19,10 +15,26 @@ const now = (): number => clock;
 
 afterEach(() => {
   clock = 1_000_000;
-  clearPriceCache();
-  clearRiskCache();
   vi.restoreAllMocks();
 });
+
+/** A cached oracle over a store the test can read and reset. */
+function cachedOracle(provider: PriceProvider): {
+  readonly oracle: CachedOracle;
+  readonly store: CacheStore<string, TokenPrice>;
+} {
+  const store = new CacheStore<string, TokenPrice>(now);
+  return { oracle: new CachedOracle(new PriceOracle([provider]), { store }), store };
+}
+
+/** A cached assessor over a store the test can read and reset. */
+function cachedRisk(provider: RiskProvider): {
+  readonly assessor: CachedRiskAssessor;
+  readonly store: CacheStore<string, RiskAssessment>;
+} {
+  const store = new CacheStore<string, RiskAssessment>(now);
+  return { assessor: new CachedRiskAssessor(new RiskChecker([provider]), { store }), store };
+}
 
 /** A price provider that counts how often it was asked. */
 function countingPriceProvider(prices: Record<string, number>): PriceProvider & {
@@ -266,19 +278,30 @@ describe('CachedOracle', () => {
     expect(oracle.cacheStats().size).toBe(1);
   });
 
-  it('shares the process-wide store and its module-level helpers', async () => {
-    const provider = countingPriceProvider({ ETH: 3200 });
-    const oracle = new CachedOracle(new PriceOracle([provider]));
+  it('gives every oracle its own store, so two oracles cannot see each other', async () => {
+    const first = cachedOracle(countingPriceProvider({ ETH: 3200 }));
+    const second = cachedOracle(countingPriceProvider({ ETH: 9999 }));
 
-    await oracle.fetchPrice('ETH');
-    await oracle.fetchPrice('ETH');
+    await first.oracle.fetchPrice('ETH');
+    await second.oracle.fetchPrice('ETH');
 
-    expect(priceCacheStats()).toEqual({ hits: 1, misses: 1, size: 1 });
+    expect(first.oracle.cacheStats()).toEqual({ hits: 0, misses: 1, size: 1 });
+    expect(second.oracle.cacheStats()).toEqual({ hits: 0, misses: 1, size: 1 });
+    // The second oracle paid its own miss instead of reading the first's entry.
+    expect((await first.oracle.fetchPrice('ETH')).usdPrice).toBe(3200);
+    expect((await second.oracle.fetchPrice('ETH')).usdPrice).toBe(9999);
+  });
 
-    clearPriceCache();
+  it('clears only its own store', async () => {
+    const first = cachedOracle(countingPriceProvider({ ETH: 3200 }));
+    const second = cachedOracle(countingPriceProvider({ ETH: 3200 }));
 
-    expect(priceCacheStats().size).toBe(0);
-    expect(oracle.cacheStats().size).toBe(0);
+    await first.oracle.fetchPrice('ETH');
+    await second.oracle.fetchPrice('ETH');
+    first.oracle.clearCache();
+
+    expect(first.store.stats().size).toBe(0);
+    expect(second.store.stats().size).toBe(1);
   });
 
   it('counts the first read of every symbol as a miss', async () => {
@@ -389,18 +412,15 @@ describe('CachedRiskAssessor', () => {
     expect(provider.calls).toBe(2);
   });
 
-  it('shares the process-wide store and its module-level helpers', async () => {
-    const provider = countingRiskProvider();
-    const assessor = new CachedRiskAssessor(new RiskChecker([provider]));
+  it('gives every assessor its own store', async () => {
+    const first = cachedRisk(countingRiskProvider());
+    const second = cachedRisk(countingRiskProvider());
 
-    await assessor.assessAddress({ address: '0xabc' });
-    await assessor.assessAddress({ address: '0xabc' });
+    await first.assessor.assessAddress({ address: '0xabc' });
+    await second.assessor.assessAddress({ address: '0xabc' });
 
-    expect(riskCacheStats()).toEqual({ hits: 1, misses: 1, size: 1 });
-
-    clearRiskCache();
-
-    expect(riskCacheStats().size).toBe(0);
+    expect(first.assessor.cacheStats()).toEqual({ hits: 0, misses: 1, size: 1 });
+    expect(second.assessor.cacheStats()).toEqual({ hits: 0, misses: 1, size: 1 });
   });
 
   it('returns a full assessment object', async () => {

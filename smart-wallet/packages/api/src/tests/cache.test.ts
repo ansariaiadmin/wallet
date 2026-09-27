@@ -379,3 +379,25 @@ describe('rate limiting', () => {
     expect(headers.get('X-RateLimit-Remaining')).toBe('0');
   });
 });
+
+describe('cache isolation between apps', () => {
+  it('does not let one app read a price another app cached', async () => {
+    const provider = countingPriceProvider({ ETH: 3200 });
+    // Two apps that share nothing but the provider they count.
+    const apps = [0, 1].map(() => {
+      const price = new CachedOracle(new PriceOracle([provider]), {
+        store: new CacheStore(now),
+      });
+      const app = withErrorHandler(new Hono());
+      app.route('/api/v1', priceRoutes(price));
+      return app;
+    });
+
+    const before = provider.calls;
+    await get(apps[0] as Hono, '/api/v1/price/ETH');
+    await get(apps[1] as Hono, '/api/v1/price/ETH');
+
+    // Two apps, two misses: the second did not inherit the first's entry.
+    expect(provider.calls).toBe(before + 2);
+  });
+});

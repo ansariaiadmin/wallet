@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import type {
   Balance,
@@ -10,7 +10,7 @@ import type {
 } from '@wallet/chains';
 import { createApp, withErrorHandler } from '../app';
 import { broadcastRoutes, statusRoutes } from '../routes/broadcast';
-import { resetTxRecords, markTxStatus, txKey } from '../tx-status';
+import { TxStore, txKey } from '../tx-status';
 
 /** A 32-byte hash, the shape every family reports. */
 const EVM_HASH = '0x9c3b2d1e5f7a8b4c6d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c';
@@ -102,16 +102,12 @@ async function get(
 }
 
 /** App with an injected connector, so nothing ever reaches a node. */
-function appWith(connector: ChainConnector): Hono {
+function appWith(connector: ChainConnector, store = new TxStore()): Hono {
   const app = withErrorHandler(new Hono());
-  app.route('/api/v1', broadcastRoutes({ connector: () => connector }));
-  app.route('/api/v1', statusRoutes({ connector: () => connector }));
+  app.route('/api/v1', broadcastRoutes({ connector: () => connector, store }));
+  app.route('/api/v1', statusRoutes({ connector: () => connector, store }));
   return app;
 }
-
-beforeEach(() => {
-  resetTxRecords();
-});
 
 describe('POST /api/v1/tx/broadcast', () => {
   it('broadcasts an EVM transaction and reports the hash', async () => {
@@ -333,9 +329,10 @@ describe('GET /api/v1/tx/:network/:txHash/status', () => {
   });
 
   it('advances a tracked transaction to confirmed', async () => {
-    const app = appWith(new FakeConnector('ethereum', EVM_HASH));
+    const store = new TxStore();
+    const app = appWith(new FakeConnector('ethereum', EVM_HASH), store);
     await post(app, '/api/v1/tx/broadcast', { network: 'ethereum', signedTx: SIGNED_EVM });
-    markTxStatus('ethereum', EVM_HASH, 'confirmed', 7);
+    store.mark('ethereum', EVM_HASH, 'confirmed', 7);
 
     const { json } = await get(app, `/api/v1/tx/ethereum/${EVM_HASH}/status`);
 
@@ -418,10 +415,11 @@ describe('tx record bookkeeping', () => {
     expect(txKey('ethereum', OTHER_EVM_HASH)).not.toBe(txKey('solana', OTHER_SOL_HASH));
   });
 
-  it('forgets every record on reset', async () => {
-    const app = appWith(new FakeConnector('ethereum', EVM_HASH));
+  it('forgets every record on clear', async () => {
+    const store = new TxStore();
+    const app = appWith(new FakeConnector('ethereum', EVM_HASH), store);
     await post(app, '/api/v1/tx/broadcast', { network: 'ethereum', signedTx: SIGNED_EVM });
-    resetTxRecords();
+    store.clear();
 
     const { json } = await get(app, `/api/v1/tx/ethereum/${EVM_HASH}/status`);
 
@@ -429,6 +427,19 @@ describe('tx record bookkeeping', () => {
   });
 
   it('ignores a status update for an unknown transaction', () => {
-    expect(() => markTxStatus('ethereum', EVM_HASH, 'confirmed', 3)).not.toThrow();
+    expect(() => new TxStore().mark('ethereum', EVM_HASH, 'confirmed', 3)).not.toThrow();
+  });
+
+  it("keeps two apps from seeing each other's broadcasts", async () => {
+    const first = appWith(new FakeConnector('ethereum', EVM_HASH));
+    const second = appWith(new FakeConnector('ethereum', EVM_HASH));
+
+    await post(first, '/api/v1/tx/broadcast', { network: 'ethereum', signedTx: SIGNED_EVM });
+
+    const mine = await get(first, `/api/v1/tx/ethereum/${EVM_HASH}/status`);
+    const theirs = await get(second, `/api/v1/tx/ethereum/${EVM_HASH}/status`);
+
+    expect(mine.json.status).toBe('pending');
+    expect(theirs.json.status).toBe('not_found');
   });
 });

@@ -23,6 +23,7 @@ import { MemoryUserStore, type UserStore } from './auth/user-store';
 import type { KeyStore } from '@wallet/keys';
 import { rateLimitMiddleware, RateLimiter } from './rate-limit';
 import { cacheRoutes } from './routes/cache';
+import { TxStore } from './tx-status';
 import { healthRoutes } from './routes/health';
 import { priceRoutes } from './routes/price';
 import { quoteRoutes } from './routes/quote';
@@ -143,6 +144,11 @@ export interface AppDeps {
    * invalidates every token, and nothing secret has to be configured.
    */
   readonly jwtSecret?: Uint8Array;
+  /**
+   * Where broadcasts are remembered. Defaults to one per app; pass the same
+   * instance to several apps when they must agree on what was broadcast.
+   */
+  readonly txStore?: TxStore;
 }
 
 /**
@@ -203,8 +209,12 @@ export function createApp(deps: AppDeps = {}): Hono {
   app.route('/api/v1', riskRoutes(risk));
   app.route('/api/v1', quoteRoutes(createSwapRouter()));
   app.route('/api/v1', txRoutes());
-  app.route('/api/v1', broadcastRoutes());
-  app.route('/api/v1', statusRoutes());
+  // One store per app, shared by the route that records a broadcast and the
+  // route that reads it back: a broadcast must be findable by its own app and
+  // invisible to any other app in the same process.
+  const txStore = deps.txStore ?? new TxStore();
+  app.route('/api/v1', broadcastRoutes({ store: txStore }));
+  app.route('/api/v1', statusRoutes({ store: txStore }));
   app.route('/api/v1', cacheRoutes({ price, risk }));
 
   return app;

@@ -18,12 +18,9 @@ import { CacheStore } from './store';
 /** How long a screening verdict stays fresh. */
 export const RISK_CACHE_TTL_MS = 60_000;
 
-/** The process-wide screening store, shared by every cached assessor. */
-const riskStore = new CacheStore<string, RiskAssessment>();
-
 /** What a {@link CachedRiskAssessor} accepts on top of {@link CacheOptions}. */
 export interface CachedRiskOptions extends CacheOptions {
-  /** Store to use; defaults to the process-wide screening store. */
+  /** Store to use; defaults to a fresh one per instance. */
   readonly store?: CacheStore<string, RiskAssessment>;
 }
 
@@ -35,7 +32,7 @@ export class CachedRiskAssessor {
   constructor(checker: RiskChecker, options: CachedRiskOptions = {}) {
     this.checker = checker;
     this.ttlMs = options.ttlMs ?? RISK_CACHE_TTL_MS;
-    this.store = options.store ?? riskStore;
+    this.store = options.store ?? new CacheStore<string, RiskAssessment>();
   }
 
   /** Cached address screen. Key: `address:network`. */
@@ -83,14 +80,4 @@ export function addressKey(address: string, network?: string): string {
 export function tokenKey(symbol: string, network?: string): string {
   const normalized = typeof symbol === 'string' ? symbol.trim().toUpperCase() : '';
   return `token:${normalized}:${(network ?? 'unknown').trim().toLowerCase()}`;
-}
-
-/** Drops every verdict cached by any {@link CachedRiskAssessor}. */
-export function clearRiskCache(): void {
-  riskStore.clear();
-}
-
-/** Counters of the process-wide screening cache. */
-export function riskCacheStats(): CacheStats {
-  return riskStore.stats();
 }

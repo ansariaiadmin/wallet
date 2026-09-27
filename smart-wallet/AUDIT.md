@@ -189,6 +189,29 @@ and keeps nothing, which is what `destroyUnlocked()` already claimed.
 **Weighted total: 7.6 / 10** (was 6.1).
 
 Still open, in the order the plan tackles them: the api does not use the sdk
-(axis 6), the process-global tx-status map and default cache store (S3), no
-multi-wallet identity (S4), one error taxonomy across chains (S5), no history
-adapter (S6), no structured logging or metrics (S7).
+(axis 6), no multi-wallet identity (S4), one error taxonomy across chains (S5),
+no history adapter (S6), no structured logging or metrics (S7).
+
+### After S3 — state isolation
+
+Two pieces of process-global state were the reason two apps in one process
+could see each other's data. Both are now per-app instances, injected the same
+way the logout list already was.
+
+- `api/src/tx-status.ts`: the module-level `records` map became a `TxStore`
+  class. `createApp` builds one and hands it to both `broadcastRoutes` and
+  `statusRoutes`, so a broadcast is findable by its own app and invisible to any
+  other app. `AppDeps.txStore` lets an embedder share one deliberately.
+- `core/src/cache/*`: `CachedOracle` and `CachedRiskAssessor` defaulted to a
+  module-level store, so two oracles shared entries and hit counters. Each now
+  builds its own `CacheStore` unless one is passed in, and the module-level
+  `clearPriceCache` / `priceCacheStats` / `clearRiskCache` / `riskCacheStats`
+  helpers — which nothing outside core called — are gone.
+
+Two tests that asserted the old sharing behaviour were replaced with tests that
+assert the new isolation, and the store is resolved once per router rather than
+per request (resolving per request would hand every broadcast its own store and
+no status would ever be found).
+
+Numbers: core 176 → 177, api 190 → 192, monorepo 694 → **697 passed** with the
+same 5 skipped. typecheck, lint, format clean.

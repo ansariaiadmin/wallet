@@ -25,9 +25,6 @@ export interface TxRecord {
   readonly broadcastAt: number;
 }
 
-/** Records keyed by `network:txHash`; EVM hashes are case-insensitive. */
-const records = new Map<string, TxRecord>();
-
 /** Stable key for one transaction on one network. */
 export function txKey(network: NetworkId, txHash: string): string {
   const hash = txHash.trim();
@@ -35,34 +32,47 @@ export function txKey(network: NetworkId, txHash: string): string {
   return `${network}:${normalized}`;
 }
 
-/** Remembers a fresh broadcast as `pending` with no confirmations yet. */
-export function recordBroadcast(network: NetworkId, txHash: string, broadcastAt: number): void {
-  records.set(txKey(network, txHash), { status: 'pending', confirmations: 0, broadcastAt });
-}
+/**
+ * The transactions one application broadcast, keyed by `network:txHash`.
+ *
+ * This used to be a module-level map, which meant two apps built in the same
+ * process shared one transaction history: a broadcast through one app was
+ * visible to the other, and a test that reset the map reset it for every other
+ * test. One instance per app, passed in the same way as the logout list, is
+ * what keeps them independent.
+ */
+export class TxStore {
+  private readonly records = new Map<string, TxRecord>();
 
-/** Advances a tracked transaction, e.g. after a chain-read poll. */
-export function markTxStatus(
-  network: NetworkId,
-  txHash: string,
-  status: TrackedStatus,
-  confirmations: number,
-): void {
-  const key = txKey(network, txHash);
-  const existing = records.get(key);
-  if (existing === undefined) {
-    return;
+  /** Remembers a fresh broadcast as `pending` with no confirmations yet. */
+  record(network: NetworkId, txHash: string, broadcastAt: number): void {
+    this.records.set(txKey(network, txHash), { status: 'pending', confirmations: 0, broadcastAt });
   }
-  records.set(key, { status, confirmations, broadcastAt: existing.broadcastAt });
-}
 
-/** The tracked record for one transaction, if this process broadcast it. */
-export function lookupTx(network: NetworkId, txHash: string): TxRecord | undefined {
-  return records.get(txKey(network, txHash));
-}
+  /** Advances a tracked transaction, e.g. after a chain-read poll. */
+  mark(network: NetworkId, txHash: string, status: TrackedStatus, confirmations: number): void {
+    const key = txKey(network, txHash);
+    const existing = this.records.get(key);
+    if (existing === undefined) {
+      return;
+    }
+    this.records.set(key, { status, confirmations, broadcastAt: existing.broadcastAt });
+  }
 
-/** Drops every record. Only used by tests to keep them independent. */
-export function resetTxRecords(): void {
-  records.clear();
+  /** The tracked record for one transaction, if this app broadcast it. */
+  lookup(network: NetworkId, txHash: string): TxRecord | undefined {
+    return this.records.get(txKey(network, txHash));
+  }
+
+  /** Drops every record this store holds. */
+  clear(): void {
+    this.records.clear();
+  }
+
+  /** How many transactions this store tracks. */
+  get size(): number {
+    return this.records.size;
+  }
 }
 
 /** Optional connector capability: read a transaction back from the chain. */
@@ -78,6 +88,7 @@ interface TransactionReader {
  */
 export async function readTransactionStatus(
   connector: ChainConnector,
+  store: TxStore,
   network: NetworkId,
   txHash: string,
 ): Promise<TxRecord | undefined> {
@@ -85,5 +96,5 @@ export async function readTransactionStatus(
   if (typeof candidate.getTransactionStatus === 'function') {
     return candidate.getTransactionStatus(txHash);
   }
-  return lookupTx(network, txHash);
+  return store.lookup(network, txHash);
 }
