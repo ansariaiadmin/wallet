@@ -1,14 +1,25 @@
 import { Hono } from 'hono';
-import { buildTx, BuilderError } from '@wallet/core';
-import type { ContractToken, SplToken, TxParams } from '@wallet/core';
+import { SmartWallet, toSdkError } from '@wallet/sdk';
 import { ApiError } from '../errors';
-import { FAMILY_CHAIN_ID } from '../chains';
 import { jsonSafe } from '../serialize';
-import { optionalString, readJsonObject, requireString } from '../request';
+import { readJsonObject, requireString } from '../request';
 import { isChainType, isDecimals, isPositiveNumberString, isTxType } from '../validation';
 
-/** Network every built transaction targets unless a caller overrides it. */
-const DEFAULT_NETWORK = 'mainnet';
+/** The `NetworkId` whose family is `chain`, so the SDK can resolve it. */
+const CHAIN_TO_NETWORK = { evm: 'ethereum', solana: 'solana', tron: 'tron' } as const;
+
+/** Reads `decimals` and rejects anything the builder would refuse anyway. */
+function readDecimals(body: Record<string, unknown>): number {
+  const decimals = body.decimals;
+  if (!isDecimals(decimals)) {
+    throw new ApiError(
+      400,
+      'INVALID_DECIMALS',
+      'decimals must be an integer between 0 and 255 when type is token',
+    );
+  }
+  return decimals;
+}
 
 /**
  * Build endpoint backed by the P4 builder.
@@ -43,52 +54,35 @@ export function txRoutes(): Hono {
         'amount must be a positive integer string in the smallest token unit',
       );
     }
-    const network = optionalString(body, 'network') ?? DEFAULT_NETWORK;
 
-    let token: ContractToken | SplToken | undefined;
-    if (type === 'token') {
-      const tokenAddress = requireString(body, 'tokenAddress');
-      const decimals = body.decimals;
-      if (!isDecimals(decimals)) {
-        throw new ApiError(
-          400,
-          'INVALID_DECIMALS',
-          'decimals must be an integer between 0 and 255 when type is token',
-        );
-      }
-      token =
-        chain === 'solana' ? { mint: tokenAddress, decimals } : { address: tokenAddress, decimals };
-    }
-
-    const params: TxParams =
-      chain === 'solana'
-        ? {
-            family: 'solana',
-            chainId: FAMILY_CHAIN_ID.solana,
-            network,
-            from,
-            to,
-            amount: BigInt(amount),
-            token: token as SplToken | undefined,
-          }
-        : {
-            family: chain,
-            chainId: FAMILY_CHAIN_ID[chain],
-            network,
-            from,
-            to,
-            amount: BigInt(amount),
-            token: token as ContractToken | undefined,
-          };
-
+    // The build runs through `SmartWallet.buildUnsigned`, not the core builder
+    // directly: this is the one place the api and the sdk both build a
+    // transaction, and two implementations of one rule is how they drift.
+    // Nothing is signed here and no key material exists in this process.
     let unsigned;
     try {
-      unsigned = await buildTx(params);
+      unsigned = await new SmartWallet().buildUnsigned({
+        network: CHAIN_TO_NETWORK[chain],
+        type,
+        from,
+        to,
+        amount,
+        tokenAddress: type === 'token' ? requireString(body, 'tokenAddress') : undefined,
+        decimals: type === 'token' ? readDecimals(body) : undefined,
+      });
     } catch (error) {
-      if (error instanceof BuilderError) {
-        throw new ApiError(422, 'BUILD_FAILED', error.message);
+      // A field-level problem stays a 400 and a builder refusal stays a 422:
+      // the two mean different things to a caller, and the old route kept them
+      // apart. Re-throwing an `ApiError` untouched is what stops this catch
+      // from flattening a 400 into a 422.
+      if (error instanceof ApiError) {
+        throw error;
       }
-      throw error;
+      const sdkError = toSdkError(error, 'BUILD_FAILED');
+      if (sdkError.code === 'INVALID_INPUT') {
+        throw new ApiError(400, 'INVALID_INPUT', sdkError.message);
+      }
+      throw new ApiError(422, 'BUILD_FAILED', sdkError.message);
     }
 
     return c.json({ chain, unsignedTx: jsonSafe(unsigned) }, 200);

@@ -20,6 +20,7 @@ export default defineConfig({
       '@router': fromHere('../router/src'),
       '@api': fromHere('../api/src'),
       '@sdk': fromHere('../sdk/src'),
+      '@wallet/sdk': fromHere('../sdk/src/index.ts'),
     },
   },
 });

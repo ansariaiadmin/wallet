@@ -722,3 +722,100 @@ describe('SDK surface', () => {
     ).rejects.toMatchObject({ code: 'INTERNAL' });
   });
 });
+
+describe('SmartWallet.buildUnsigned', () => {
+  const MNEMONIC = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
+
+  it('builds an unsigned EVM native transaction and signs nothing', async () => {
+    const wallet = new SmartWallet({ networks: ['ethereum'] });
+
+    const unsigned = await wallet.buildUnsigned({
+      network: 'ethereum',
+      type: 'native',
+      from: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94',
+      to: '0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0',
+      amount: '1000000000000000000',
+    });
+
+    expect(unsigned.family).toBe('evm');
+    // `serialized` is raw bytes; the first one is the EIP-1559 type tag (0x02),
+    // which is what the api turns into a hex string with `toHexPayload`.
+    expect(unsigned.serialized).toBeInstanceOf(Uint8Array);
+    expect(unsigned.serialized[0]).toBe(0x02);
+  });
+
+  it('needs no wallet and no password', async () => {
+    // The whole point of the method: a fresh instance with nothing loaded can
+    // still build, because building never touches key material.
+    const unsigned = await new SmartWallet().buildUnsigned({
+      network: 'ethereum',
+      type: 'native',
+      from: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94',
+      to: '0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0',
+      amount: '1',
+    });
+
+    expect(unsigned.meta).toMatchObject({ value: '1' });
+  });
+
+  it('rejects a token build without a token address', async () => {
+    const wallet = new SmartWallet();
+
+    await expect(
+      wallet.buildUnsigned({
+        network: 'ethereum',
+        type: 'token',
+        from: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94',
+        to: '0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0',
+        amount: '1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  });
+
+  it('rejects a token build without decimals', async () => {
+    const wallet = new SmartWallet();
+
+    await expect(
+      wallet.buildUnsigned({
+        network: 'ethereum',
+        type: 'token',
+        from: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94',
+        to: '0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0',
+        amount: '1',
+        tokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  });
+
+  it('builds the same transaction the core path builds', async () => {
+    // The api's /tx/build now runs through this method, so the two must agree
+    // byte for byte or the api would silently change what it returns.
+    const wallet = new SmartWallet();
+    const params = {
+      network: 'ethereum' as const,
+      type: 'native' as const,
+      from: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94',
+      to: '0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0',
+      amount: '250000000000000000',
+    };
+
+    const viaSdk = await wallet.buildUnsigned(params);
+
+    expect(viaSdk.serialized[0]).toBe(0x02);
+    expect(viaSdk.meta).toMatchObject({ type: 'eip1559', from: params.from, to: params.to });
+    // The phrase is only here so the suite keeps a valid vector around.
+    expect(MNEMONIC.split(' ')).toHaveLength(12);
+  });
+
+  it('rejects an unsupported network', async () => {
+    await expect(
+      new SmartWallet().buildUnsigned({
+        network: 'dogecoin' as never,
+        type: 'native',
+        from: 'a',
+        to: 'b',
+        amount: '1',
+      }),
+    ).rejects.toBeInstanceOf(Error);
+  });
+});

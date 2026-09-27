@@ -17,6 +17,7 @@
     "@wallet/core": "workspace:*",
     "@wallet/keys": "workspace:*",
     "@wallet/router": "workspace:*",
+    "@wallet/sdk": "workspace:*",
     "hono": "4.13.9",
     "jose": "5.10.0"
   },

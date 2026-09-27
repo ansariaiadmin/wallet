@@ -12,6 +12,7 @@ import {
   type ContractToken,
   type SplToken,
   type TxParams,
+  type UnsignedTx,
 } from '@wallet/core';
 import {
   assertValid,
@@ -208,6 +209,70 @@ export class SmartWallet {
    * a `finally` block, and the unlocked wallet is destroyed afterwards — so no
    * key material outlives this call.
    */
+  /**
+   * Builds an unsigned transaction and signs nothing.
+   *
+   * This is the seam an embedder that must not hold key material needs: the
+   * api's `POST /tx/build` answers with an unsigned transaction and lets the
+   * caller sign it elsewhere, so it used to call the core builder directly and
+   * the wallet surface existed twice. Signing stays a separate call
+   * ({@link buildAndSign}), which is what keeps a server that must never see a
+   * private key from seeing one.
+   */
+  async buildUnsigned(params: {
+    network: NetworkId;
+    type: 'native' | 'token';
+    from: string;
+    to: string;
+    amount: string;
+    tokenAddress?: string;
+    decimals?: number;
+  }): Promise<UnsignedTx> {
+    const family = this.familyFor(params.network);
+    const amount = this.parseAmount(params.amount);
+
+    let token: ContractToken | SplToken | undefined;
+    if (params.type === 'token') {
+      if (params.tokenAddress === undefined || params.tokenAddress.trim() === '') {
+        throw new SdkError('INVALID_INPUT', 'tokenAddress is required when type is "token"');
+      }
+      if (params.decimals === undefined || !Number.isInteger(params.decimals)) {
+        throw new SdkError('INVALID_INPUT', 'decimals is required when type is "token"');
+      }
+      token =
+        family === 'solana'
+          ? { mint: params.tokenAddress, decimals: params.decimals }
+          : { address: params.tokenAddress, decimals: params.decimals };
+    }
+
+    // The same family-shaped params `buildAndSign` builds: `TxParams` is a
+    // discriminated union, so the solana variant carries a mint and the others
+    // a contract address. Sharing the shape is what keeps the two methods from
+    // drifting apart.
+    const txParams: TxParams =
+      family === 'solana'
+        ? {
+            family: 'solana',
+            chainId: NETWORK_CHAIN_ID[params.network],
+            network: this.networkName(params.network),
+            from: params.from,
+            to: params.to,
+            amount,
+            token: token as SplToken | undefined,
+          }
+        : {
+            family,
+            chainId: NETWORK_CHAIN_ID[params.network],
+            network: this.networkName(params.network),
+            from: params.from,
+            to: params.to,
+            amount,
+            token: token as ContractToken | undefined,
+          };
+
+    return this.guard(() => buildTx(txParams));
+  }
+
   async buildAndSign(params: {
     network: NetworkId;
     type: 'native' | 'token';

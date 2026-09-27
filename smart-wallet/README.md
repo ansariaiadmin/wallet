@@ -228,6 +228,29 @@ production. A _malformed_ value throws at startup rather than being ignored:
 `JWT_SECRET=short` failing loudly is what stops a deployment signing tokens
 with a key nobody chose.
 
+## One engine
+
+`POST /api/v1/tx/build` runs through `SmartWallet.buildUnsigned()` from
+`@wallet/sdk`, not the core builder directly. The method exists because the api
+must never hold key material — it returns an unsigned transaction and lets the
+caller sign it elsewhere — so the sdk gained a build-only entry point instead of
+forcing the api to reach past it into `@wallet/core`.
+
+```ts
+import { SmartWallet } from '@wallet/sdk';
+
+const unsigned = await new SmartWallet().buildUnsigned({
+  network: 'ethereum',
+  type: 'token',
+  from: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94',
+  to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  amount: '1000000',
+  tokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  decimals: 6,
+});
+// unsigned.serialized is raw bytes; toHexPayload turns it into 0x02…
+```
+
 ## Observability
 
 Every `/api/v1` request is timed, counted and labelled by route pattern, and

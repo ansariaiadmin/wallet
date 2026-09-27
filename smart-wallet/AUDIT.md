@@ -305,3 +305,49 @@ here. Those are the three things standing between 8.4 and 10.
 Not claimed: live RPC or faucet coverage. This sandbox has no outbound HTTPS
 except the npm registry, so the 5 `RUN_INTEGRATION` tests stay skipped and no
 `RUN_E2E` suite was added. That is a gap in the score, not a pass.
+
+### After S7 — one build path
+
+`SmartWallet.buildUnsigned()` was added to the sdk and `POST /api/v1/tx/build`
+now runs through it. The api no longer imports `buildTx` from `@wallet/core`
+for this route, and `@wallet/sdk` is a dependency of `@wallet/api` for the
+first time — the wallet surface had been implemented twice, and this closes the
+build half of it.
+
+Two things the change had to get right, both caught by tests rather than by
+reading:
+
+- A field-level problem must stay a **400** and a builder refusal a **422**.
+  The first version of the catch block wrapped every error, including the
+  route's own `ApiError`, into a 422 — two tests failed, and the mapping now
+  re-throws `ApiError` untouched and maps `SdkError('INVALID_INPUT')` to 400.
+- `UnsignedTx.serialized` is a `Uint8Array`, not a hex string; the sdk's
+  `toHexPayload` is what produces the hex the api returns. Asserting
+  `toMatch(/^0x02/)` on it was a test written against a shape that does not
+  exist.
+
+Numbers: sdk 91 → 97, monorepo 721 → **727 passed** with the same 5 skipped.
+typecheck, lint and format clean.
+
+**Score after S7: 8.7 / 10** — dead code 9.5, duplication 8.5, packaging 8.0,
+consistency 8.5, correctness 9.0, layering 7.0, docs 6.5, CI 8.0, security 8.0,
+ops 8.5.
+
+### Why this is not a 10, stated plainly
+
+Three gaps, none of which close from this sandbox:
+
+1. **Layering is 7.0, not 10.** The build path is unified; `/quote`, `/price`
+   and `/risk` still call core directly, and `/broadcast` still goes through
+   `@wallet/chains` rather than `SmartWallet.broadcast`. The remaining work is
+   mechanical but it is not done, and claiming a 10 for half a refactor would
+   be exactly the kind of unverified claim this file exists to prevent.
+2. **No live coverage.** The sandbox has no outbound HTTPS except the npm
+   registry. The five `RUN_INTEGRATION` tests stay skipped and no `RUN_E2E`
+   suite exists. A wallet with zero verified live broadcast is not a 10.
+3. **No multi-wallet identity.** One user owns one wallet; `walletId` is not a
+   first-class key with its own keystore namespace.
+
+What a 10 would need: the three route groups moved onto the sdk, an env-gated
+`RUN_E2E=1` suite with recorded fixtures, and multi-wallet identity. Each is a
+phase, and each is written down rather than assumed away.
