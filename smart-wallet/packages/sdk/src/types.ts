@@ -7,6 +7,13 @@
  */
 
 import type { KeyStore } from '@wallet/keys';
+import type {
+  AddressRiskRequest,
+  RiskAssessment,
+  RiskFlag,
+  TokenPrice,
+  TokenRiskRequest,
+} from '@wallet/core';
 
 /** Chain families the SDK can derive keys and build transactions for. */
 export type ChainFamily = 'evm' | 'solana' | 'tron';
@@ -33,6 +40,16 @@ export interface WalletConfig {
   priceProviders?: 'mock' | 'live';
   /** `mock` (default) uses the deterministic P8 providers. */
   riskProviders?: 'mock' | 'live';
+  /**
+   * Oracle to read prices from. Defaults to the deterministic mock providers.
+   *
+   * Injectable so an embedder can put its own cache, or its own live feed, in
+   * front of a `SmartWallet` — and so a host that already owns a cached oracle
+   * does not end up with two of them and two sets of counters.
+   */
+  oracle?: PriceSource;
+  /** Screening checker to read verdicts from. Defaults to the mock providers. */
+  riskChecker?: RiskSource;
   /** RPC endpoint overrides, for tests and private nodes. */
   rpcUrls?: Readonly<Partial<Record<NetworkId, readonly string[]>>>;
   /**
@@ -44,6 +61,24 @@ export interface WalletConfig {
   keystore?: KeyStore;
   /** Id the phrase is stored under. Defaults to `"default"`. */
   keystoreId?: string;
+}
+
+/**
+ * The smallest thing that can answer a price.
+ *
+ * Structural rather than nominal on purpose: a `PriceOracle` satisfies it, and
+ * so does a `CachedOracle`, which is what an embedder that already owns a cache
+ * wants to hand over. Requiring the full oracle would force the api to keep two
+ * of them — one for the wallet and one for `/cache` — with two sets of counters.
+ */
+export interface PriceSource {
+  fetchPrice(symbol: string, currency?: string): Promise<TokenPrice>;
+}
+
+/** The smallest thing that can answer a screening verdict. */
+export interface RiskSource {
+  assessAddress(request: AddressRiskRequest): Promise<RiskAssessment>;
+  assessToken(request: TokenRiskRequest): Promise<RiskAssessment>;
 }
 
 /** A freshly generated wallet. */
@@ -127,6 +162,8 @@ export interface PriceSummary {
   /** 24 hour change in basis points, signed. */
   change24h: number;
   confidence: 'high' | 'medium';
+  /** When the oracle produced this price, in ms. */
+  updatedAt: number;
 }
 
 /** A screening verdict as the SDK reports it. */
@@ -134,4 +171,6 @@ export interface RiskSummary {
   overallRisk: 'none' | 'low' | 'medium' | 'high' | 'critical';
   flagCount: number;
   assessedAt: number;
+  /** The reasons behind the verdict; `flagCount` alone says how many, not what. */
+  flags: readonly RiskFlag[];
 }

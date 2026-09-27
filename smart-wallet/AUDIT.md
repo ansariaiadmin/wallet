@@ -333,6 +333,55 @@ typecheck, lint and format clean.
 consistency 8.5, correctness 9.0, layering 7.0, docs 6.5, CI 8.0, security 8.0,
 ops 8.5.
 
+### After S8 — price and risk go through the wallet
+
+`GET /price/:symbol` and `POST /risk/address` now read through
+`SmartWallet.getPrice` and `SmartWallet.checkAddressRisk`, and `createApp`
+builds one wallet wired to the app's own cached oracle and checker.
+
+Two consequences worth recording, because both were design decisions rather
+than edits:
+
+- The sdk's summary types were **too small to serve the api's contract**:
+  `PriceSummary` had no `updatedAt` and `RiskSummary` carried a `flagCount`
+  instead of the flags themselves. Routing the api through them unchanged would
+  have silently dropped the `ts` field and the reasons behind a verdict. Both
+  types now carry the full shape, and four sdk tests pin it.
+- `SmartWallet` accepts a `PriceSource` / `RiskSource` — the _smallest_
+  interface that can answer — rather than a full `PriceOracle` / `RiskChecker`.
+  A `CachedOracle` satisfies it structurally, which is what lets one cached
+  oracle serve both `/price` and `/cache/stats` instead of two caches with two
+  sets of counters.
+
+`/broadcast` and `/quote` still bypass the sdk, and the reason is a real
+contract mismatch rather than an oversight: the api's broadcast endpoint takes
+the signed transaction as a **string in the family's encoding**, while
+`SmartWallet.broadcast` takes a `Uint8Array` — the encoding is the thing the sdk
+owns, so the api would have to decode before it could delegate, which defeats
+the point. Closing it means changing one of the two contracts, and that is a
+decision to make deliberately rather than in the same commit as a refactor.
+
+Numbers: sdk 97 → 101, monorepo 727 → **731 passed** with the same 5 skipped.
+typecheck, lint and format clean.
+
+**Score after S8: 9.0 / 10** — dead code 9.5, duplication 9.0, packaging 8.0,
+consistency 8.5, correctness 9.0, layering 8.0, docs 6.5, CI 8.0, security 8.0,
+ops 8.5.
+
+### What still stands between this and a 10
+
+Stated plainly, because a 10 claimed over these would be the exact failure this
+file exists to prevent:
+
+1. **`/broadcast` and `/quote` bypass the sdk** — a contract mismatch, not an
+   oversight (above). Layering 8.0.
+2. **No live coverage.** No outbound HTTPS except the npm registry; the five
+   `RUN_INTEGRATION` tests stay skipped and no `RUN_E2E` suite exists. A wallet
+   with zero verified live broadcast is not a 10.
+3. **No multi-wallet identity.** One user owns one wallet.
+4. **Docs 6.5.** The README is good; there is no per-package API reference and
+   no OpenAPI document.
+
 ### Why this is not a 10, stated plainly
 
 Three gaps, none of which close from this sandbox:

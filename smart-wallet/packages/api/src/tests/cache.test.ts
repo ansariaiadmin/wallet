@@ -10,6 +10,7 @@ import {
   type RiskProvider,
 } from '@wallet/core';
 import { withErrorHandler } from '../app';
+import { SmartWallet } from '@wallet/sdk';
 import { rateLimitMiddleware, RateLimiter } from '../rate-limit';
 import { cacheRoutes } from '../routes/cache';
 import { priceRoutes } from '../routes/price';
@@ -82,11 +83,12 @@ function buildApp(options: { limiter?: RateLimiter } = {}): {
     store: new CacheStore(now),
   });
   const limiter = options.limiter ?? new RateLimiter({ now });
+  const wallet = new SmartWallet({ oracle: price, riskChecker: risk });
 
   const app = withErrorHandler(new Hono());
   app.use('/api/v1/*', rateLimitMiddleware(limiter));
-  app.route('/api/v1', priceRoutes(price));
-  app.route('/api/v1', riskRoutes(risk));
+  app.route('/api/v1', priceRoutes(wallet));
+  app.route('/api/v1', riskRoutes(wallet));
   app.route('/api/v1', cacheRoutes({ price, risk }));
   return { app, price, risk, priceProvider, riskProvider, limiter };
 }
@@ -385,11 +387,13 @@ describe('cache isolation between apps', () => {
     const provider = countingPriceProvider({ ETH: 3200 });
     // Two apps that share nothing but the provider they count.
     const apps = [0, 1].map(() => {
+      // Each app builds its own cached oracle and hands it to its own wallet,
+      // which is the wiring `createApp` now uses.
       const price = new CachedOracle(new PriceOracle([provider]), {
         store: new CacheStore(now),
       });
       const app = withErrorHandler(new Hono());
-      app.route('/api/v1', priceRoutes(price));
+      app.route('/api/v1', priceRoutes(new SmartWallet({ oracle: price })));
       return app;
     });
 

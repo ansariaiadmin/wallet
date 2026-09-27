@@ -54,6 +54,8 @@ import type {
   ChainFamily,
   FeeEstimate,
   NetworkId,
+  PriceSource,
+  RiskSource,
   PriceSummary,
   QuoteSummary,
   RiskSummary,
@@ -84,6 +86,10 @@ export class SmartWallet {
   private readonly networks: readonly NetworkId[];
   private readonly priceMode: 'mock' | 'live';
   private readonly riskMode: 'mock' | 'live';
+  /** Oracle the host supplied, when it supplied one. */
+  private readonly injectedOracle: PriceSource | undefined;
+  /** Screening checker the host supplied, when it supplied one. */
+  private readonly injectedChecker: RiskSource | undefined;
   private readonly rpcUrls: Readonly<Partial<Record<NetworkId, readonly string[]>>>;
   /** Encrypted mnemonic store the signing phase reads from, when configured. */
   private readonly keystore: KeyStore | undefined;
@@ -99,6 +105,8 @@ export class SmartWallet {
     this.networks = config.networks ?? NETWORK_IDS;
     this.priceMode = config.priceProviders ?? 'mock';
     this.riskMode = config.riskProviders ?? 'mock';
+    this.injectedOracle = config.oracle;
+    this.injectedChecker = config.riskChecker;
     this.rpcUrls = config.rpcUrls ?? {};
     this.keystore = config.keystore;
     this.keystoreId = config.keystoreId ?? DEFAULT_KEYSTORE_ID;
@@ -485,6 +493,7 @@ export class SmartWallet {
       // The SDK surface has no 'low'; a fallback-only price is reported as
       // 'medium' so callers still see a conservative value.
       confidence: price.confidence === 'low' ? 'medium' : price.confidence,
+      updatedAt: price.updatedAt,
     };
   }
 
@@ -499,6 +508,7 @@ export class SmartWallet {
       overallRisk: result.overallRisk,
       flagCount: result.flags.length,
       assessedAt: result.assessedAt,
+      flags: result.flags,
     };
   }
 
@@ -513,6 +523,7 @@ export class SmartWallet {
       overallRisk: result.overallRisk,
       flagCount: result.flags.length,
       assessedAt: result.assessedAt,
+      flags: result.flags,
     };
   }
 
@@ -659,14 +670,20 @@ export class SmartWallet {
     return NETWORK_IS_TESTNET[network] ? 'testnet' : 'mainnet';
   }
 
-  private oracle(): PriceOracle {
+  private oracle(): PriceOracle | PriceSource {
+    if (this.injectedOracle !== undefined) {
+      return this.injectedOracle;
+    }
     if (this.priceMode !== 'mock') {
       throw new SdkError('UNSUPPORTED_MODE', 'live price providers are not implemented yet');
     }
     return new PriceOracle([mockCoinGeckoProvider, mockBinanceProvider, mockKrakenProvider]);
   }
 
-  private riskChecker(): RiskChecker {
+  private riskChecker(): RiskChecker | RiskSource {
+    if (this.injectedChecker !== undefined) {
+      return this.injectedChecker;
+    }
     if (this.riskMode !== 'mock') {
       throw new SdkError('UNSUPPORTED_MODE', 'live risk providers are not implemented yet');
     }

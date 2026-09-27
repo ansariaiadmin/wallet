@@ -819,3 +819,67 @@ describe('SmartWallet.buildUnsigned', () => {
     ).rejects.toBeInstanceOf(Error);
   });
 });
+
+describe('SmartWallet summary shapes', () => {
+  it('reports when a price was produced, not only what it is', async () => {
+    const price = await new SmartWallet().getPrice('ETH');
+
+    expect(price.updatedAt).toBeGreaterThan(0);
+    expect(price).toMatchObject({ symbol: 'ETH', price: 3200, change24h: 150 });
+  });
+
+  it('reports the flags behind a verdict, not only how many', async () => {
+    const verdict = await new SmartWallet().checkAddressRisk(
+      '0x37f53b2d1056e2e07a4aC10AD3B51928cfea0f47',
+    );
+
+    expect(verdict.flagCount).toBe(verdict.flags.length);
+    expect(verdict.flags.length).toBeGreaterThan(0);
+    expect(verdict.flags[0]).toHaveProperty('reason');
+  });
+
+  it('uses an injected oracle when the host supplies one', async () => {
+    const calls: string[] = [];
+    const wallet = new SmartWallet({
+      oracle: {
+        fetchPrice: async (symbol: string, _currency?: string) => {
+          calls.push(symbol);
+          return {
+            symbol,
+            usdPrice: 1,
+            change24hBps: 0,
+            confidence: 'high' as const,
+            updatedAt: 42,
+            source: 'test-oracle',
+          };
+        },
+      },
+    });
+
+    const price = await wallet.getPrice('AAA');
+    const again = await wallet.getPrice('AAA');
+
+    expect(price).toMatchObject({ symbol: 'AAA', price: 1, updatedAt: 42 });
+    // The host's oracle is called every time: this wallet adds no cache of its
+    // own, so a host that wants one supplies a cached oracle.
+    expect(calls).toEqual(['AAA', 'AAA']);
+    expect(again.price).toBe(1);
+  });
+
+  it('uses an injected checker when the host supplies one', async () => {
+    const wallet = new SmartWallet({
+      riskChecker: {
+        assessAddress: async () => ({
+          overallRisk: 'critical' as const,
+          flags: [],
+          assessedAt: 7,
+        }),
+        assessToken: async () => ({ overallRisk: 'none' as const, flags: [], assessedAt: 8 }),
+      },
+    });
+
+    const verdict = await wallet.checkAddressRisk('0xabc');
+
+    expect(verdict).toMatchObject({ overallRisk: 'critical', flagCount: 0, assessedAt: 7 });
+  });
+});
