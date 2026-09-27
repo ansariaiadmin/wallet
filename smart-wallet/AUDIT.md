@@ -242,3 +242,27 @@ Numbers: src 15,438 → 15,445 LOC (+7, the imports and comments that stayed),
 api 192 → 188 tests, monorepo **697 → 693 passed** with the same 5 skipped.
 typecheck, lint and format clean. Layering axis 5.0 → 6.0, weighted total
 **7.6 → 7.7 / 10**.
+
+## 6. Verified, not assumed
+
+Every claim in this file was re-checked after the last commit (`95fcf08`):
+
+| Claim                             | How it was checked                                                                                                                 | Result                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 693 tests pass, 5 skipped, 0 fail | `pnpm -r test`                                                                                                                     | ✅ router 37, chains 42+5 skipped, keys 158, core 177, sdk 91, api 188 |
+| 0 type errors                     | `pnpm -r typecheck`                                                                                                                | ✅                                                                     |
+| lint and format clean             | `pnpm lint`, `prettier --check .`                                                                                                  | ✅                                                                     |
+| `@wallet/sdk` is importable       | `import { SmartWallet } from '@wallet/sdk'` executed through its own `exports` field                                               | ✅                                                                     |
+| the API serves real traffic       | `pnpm --filter @wallet/api start` + curl on `/health`, `/auth/register`, `/auth/me`, `/price/ETH`, `/risk/address`, `/cache/stats` | ✅ 200/201/200/200/200/200                                             |
+| two apps share nothing            | `createApp` twice, one broadcast through the first                                                                                 | ✅ `pending` for the owner, `not_found` for the other                  |
+| no dead subtree is left           | import-graph scan over all 134 src files                                                                                           | ✅ 28 barrel-only files, all of them public API                        |
+| no reference to deleted code      | grep for `WalletApp`, `@core/commands`, `@core/types`, `LedgerPosting` across every package                                        | ✅ none                                                                |
+| README matches the code           | grep for the deleted surfaces                                                                                                      | ✅ none                                                                |
+
+**Final score: 7.7 / 10** — dead code 9.5, duplication 8.5, packaging 8.0,
+consistency 8.5, correctness 9.0, layering 6.0, docs 6.5, CI 5.0, security 8.0,
+ops 4.0.
+
+Not claimed: live RPC or faucet coverage. This sandbox has no outbound HTTPS
+except the npm registry, so the 5 `RUN_INTEGRATION` tests stay skipped and no
+`RUN_E2E` suite was added. That is a gap in the score, not a pass.
