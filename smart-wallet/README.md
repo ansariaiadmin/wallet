@@ -251,6 +251,52 @@ const unsigned = await new SmartWallet().buildUnsigned({
 // unsigned.serialized is raw bytes; toHexPayload turns it into 0x02…
 ```
 
+## API reference
+
+`docs/openapi.yaml` is an OpenAPI 3.1 document covering every route, its
+parameters, its responses and its error codes.
+
+The document is **verified, not asserted**: `packages/api/src/tests/openapi.test.ts`
+serves every route, checks that each one appears in the document, and checks
+that the document names nothing the app does not serve. A route added without a
+doc — or a doc left behind by a deleted route — fails the suite, so the
+reference cannot drift from the implementation.
+
+```
+curl -s http://localhost:3000/api/v1/openapi.json   # if you serve it
+# or read the source of truth directly:
+cat docs/openapi.yaml
+```
+
+## Many wallets per user
+
+A user owns any number of wallets, and each one gets its own keystore slot:
+`walletId` is both the id the API reports and the key the encrypted mnemonic is
+stored under, so two wallets never share an entry and never share a phrase.
+
+```bash
+# registering mints the first wallet and returns the phrase once
+curl -s -X POST http://localhost:3000/api/v1/auth/register \
+  -H 'content-type: application/json' \
+  -d '{"username":"alice","password":"a good password"}'
+# → { "token": "…", "user": { "walletIds": ["wallet_…"] }, "mnemonic": "…" }
+
+# minting another: the token authorises it, the password re-encrypts the phrase
+curl -s -X POST http://localhost:3000/api/v1/auth/wallets \
+  -H 'content-type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"label":"savings","password":"a good password"}'
+# → { "walletId": "wallet_…", "label": "savings", "mnemonic": "…" }
+
+curl -s http://localhost:3000/api/v1/auth/wallets \
+  -H "Authorization: Bearer $TOKEN"
+# → { "wallets": [{ "walletId": "wallet_…", "label": "", "createdAt": "…" }, …] }
+```
+
+The password is asked for again because encrypting a phrase needs the secret and
+a bearer token deliberately does not carry one — caching it would turn a
+short-lived token into a permanent one.
+
 ## Observability
 
 Every `/api/v1` request is timed, counted and labelled by route pattern, and

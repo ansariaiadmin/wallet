@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import type { CachedRiskAssessor } from '@wallet/core';
+import { toSdkError, type SmartWallet } from '@wallet/sdk';
+import { ApiError } from '../errors';
 import { readJsonObject, requireString, optionalString } from '../request';
 
 /**
@@ -7,17 +8,30 @@ import { readJsonObject, requireString, optionalString } from '../request';
  *
  * Both routes only validate that the required field is present: the level and
  * the reasons come from the providers, and the merged verdict is returned
- * as-is. The checker throws `RiskError`, which the global handler maps to
- * 400 (invalid input) or 503 (every provider failed).
+ * as-is. An upstream refusal is 400 (invalid input) or 503 (every provider
+ * failed), which is what the global handler renders.
+ *
+ * The verdict comes from `SmartWallet`, so an embedder that screens an address
+ * through the sdk gets the same answer this route gives.
  */
-export function riskRoutes(checker: CachedRiskAssessor): Hono {
+export function riskRoutes(wallet: SmartWallet): Hono {
   return new Hono()
     .post('/risk/address', async (c) => {
       const body = await readJsonObject(c);
       const address = requireString(body, 'address');
       const chain = optionalString(body, 'chain');
 
-      const result = await checker.assessAddress({ address, chain });
+      let result;
+      try {
+        result = await wallet.checkAddressRisk(address, chain);
+      } catch (error) {
+        const sdkError = toSdkError(error, 'INTERNAL');
+        if (sdkError.code === 'INVALID_INPUT') {
+          throw new ApiError(400, 'INVALID_INPUT', sdkError.message);
+        }
+        throw new ApiError(503, 'RISK_UNAVAILABLE', sdkError.message);
+      }
+
       return c.json(
         {
           overallRisk: result.overallRisk,
@@ -32,7 +46,17 @@ export function riskRoutes(checker: CachedRiskAssessor): Hono {
       const symbol = requireString(body, 'symbol');
       const chain = optionalString(body, 'chain');
 
-      const result = await checker.assessToken({ symbol, chain });
+      let result;
+      try {
+        result = await wallet.checkTokenRisk(symbol, chain);
+      } catch (error) {
+        const sdkError = toSdkError(error, 'INTERNAL');
+        if (sdkError.code === 'INVALID_INPUT') {
+          throw new ApiError(400, 'INVALID_INPUT', sdkError.message);
+        }
+        throw new ApiError(503, 'RISK_UNAVAILABLE', sdkError.message);
+      }
+
       return c.json(
         {
           overallRisk: result.overallRisk,

@@ -10,8 +10,8 @@ import {
 const SECRET = randomJwtSecret();
 
 /** A minimal, valid payload. */
-function payload(): { userId: string; walletId: string; jti: string } {
-  return { userId: 'user_1', walletId: 'wallet_1', jti: 'jti_1' };
+function payload(): { userId: string; walletIds: readonly string[]; jti: string } {
+  return { userId: 'user_1', walletIds: ['wallet_1'], jti: 'jti_1' };
 }
 
 /** Waits `ms`, so an expiry actually passes. */
@@ -26,7 +26,7 @@ describe('signToken / verifyToken', () => {
     const verified = await verifyToken(token, SECRET);
 
     expect(verified.userId).toBe(claims.userId);
-    expect(verified.walletId).toBe(claims.walletId);
+    expect(verified.walletIds).toEqual(claims.walletIds);
     expect(verified.jti).toBe(claims.jti);
   });
 
@@ -173,9 +173,9 @@ describe('TokenRevocation', () => {
     const revoked = new TokenRevocation();
     const now = Math.floor(Date.now() / 1000);
 
-    revoked.revoke({ userId: 'u', walletId: 'w', jti: 'gone', exp: now - 10 });
+    revoked.revoke({ userId: 'u', walletIds: ['w'], jti: 'gone', exp: now - 10 });
 
-    expect(revoked.isRevoked({ userId: 'u', walletId: 'w', jti: 'gone', exp: now - 10 })).toBe(
+    expect(revoked.isRevoked({ userId: 'u', walletIds: ['w'], jti: 'gone', exp: now - 10 })).toBe(
       false,
     );
     expect(revoked.size).toBe(0);
@@ -184,16 +184,16 @@ describe('TokenRevocation', () => {
   it('leaves other tokens alone', () => {
     const revoked = new TokenRevocation();
     const exp = Math.floor(Date.now() / 1000) + 600;
-    revoked.revoke({ userId: 'u', walletId: 'w', jti: 'one', exp });
+    revoked.revoke({ userId: 'u', walletIds: ['w'], jti: 'one', exp });
 
-    expect(revoked.isRevoked({ userId: 'u', walletId: 'w', jti: 'two', exp })).toBe(false);
+    expect(revoked.isRevoked({ userId: 'u', walletIds: ['w'], jti: 'two', exp })).toBe(false);
   });
 
   it('has nothing to revoke without a token id', () => {
     const revoked = new TokenRevocation();
 
-    expect(revoked.revoke({ userId: 'u', walletId: 'w', exp: 1 })).toBe(false);
-    expect(revoked.isRevoked({ userId: 'u', walletId: 'w' })).toBe(false);
+    expect(revoked.revoke({ userId: 'u', walletIds: ['w'], exp: 1 })).toBe(false);
+    expect(revoked.isRevoked({ userId: 'u', walletIds: ['w'] })).toBe(false);
   });
 
   it('rejects an empty token id', () => {
@@ -205,7 +205,7 @@ describe('TokenRevocation', () => {
   it('forgets everything on clear()', () => {
     const revoked = new TokenRevocation();
     const exp = Math.floor(Date.now() / 1000) + 600;
-    revoked.revoke({ userId: 'u', walletId: 'w', jti: 'one', exp });
+    revoked.revoke({ userId: 'u', walletIds: ['w'], jti: 'one', exp });
 
     revoked.clear();
 

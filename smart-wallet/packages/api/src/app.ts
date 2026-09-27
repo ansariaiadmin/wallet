@@ -19,6 +19,7 @@ import { authRoutes } from './auth/router';
 import { MemoryUserStore, type UserStore } from './auth/user-store';
 import type { KeyStore } from '@wallet/keys';
 import { rateLimitMiddleware, RateLimiter } from './rate-limit';
+import { SmartWallet } from '@wallet/sdk';
 import { createLogger, type Logger } from './logger';
 import { MetricsRegistry } from './metrics';
 import { cacheRoutes } from './routes/cache';
@@ -90,6 +91,11 @@ export interface AppDeps {
   readonly logger?: Logger;
   /** Counters served at `/metrics`. Defaults to one registry per app. */
   readonly metrics?: MetricsRegistry;
+  /**
+   * The wallet `/price` and `/risk` read through. Defaults to one built on the
+   * app's own cached oracle and checker.
+   */
+  readonly wallet?: SmartWallet;
 }
 
 /**
@@ -140,8 +146,16 @@ export function createApp(deps: AppDeps = {}): Hono {
 
   app.use(observabilityMiddleware(logger, metrics));
 
+  // Still constructed here because `/cache` reports on them, but no route
+  // reads a price or a verdict through them any more: `/price` and `/risk` go
+  // through `SmartWallet`, which owns the oracle and the checker.
   const price = deps.price ?? createCachedOracle();
   const risk = deps.risk ?? createCachedRisk();
+  // One wallet for the whole app, wired to the app's own cached oracle and
+  // checker. `/price` and `/risk` read through it, and `/cache` reports on the
+  // same two instances — so the numbers an operator sees are the numbers the
+  // routes actually used, not a second, unused cache.
+  const wallet = deps.wallet ?? new SmartWallet({ oracle: price, riskChecker: risk });
 
   // One logout list per app by default, shared by the routes that mint tokens
   // and the middleware that refuses them.
@@ -157,8 +171,8 @@ export function createApp(deps: AppDeps = {}): Hono {
   );
 
   app.route('/api/v1', healthRoutes({ registry: metrics }));
-  app.route('/api/v1', priceRoutes(price));
-  app.route('/api/v1', riskRoutes(risk));
+  app.route('/api/v1', priceRoutes(wallet));
+  app.route('/api/v1', riskRoutes(wallet));
   app.route('/api/v1', quoteRoutes(createSwapRouter()));
   app.route('/api/v1', txRoutes());
   // One store per app, shared by the route that records a broadcast and the

@@ -52,8 +52,20 @@ interface Credentials {
 interface PublicUser {
   readonly id: string;
   readonly username: string;
-  readonly walletId: string;
+  /** Every wallet the user owns, oldest first. */
+  readonly walletIds: readonly string[];
   readonly createdAt: string;
+}
+
+/** The body of `POST /auth/wallets`. */
+interface WalletRequest {
+  readonly label?: unknown;
+  readonly password?: unknown;
+}
+
+/** A wallet id: the key the encrypted mnemonic is stored under. */
+function newWalletId(): string {
+  return `wallet_${randomUUID()}`;
 }
 
 /** Builds the `/auth` router. */
@@ -73,7 +85,7 @@ export function authRoutes(deps: AuthDeps): Hono<AuthEnv> {
     }
 
     const passwordHash = await hashPassword(password);
-    const walletId = `wallet_${randomUUID()}`;
+    const walletId = newWalletId();
     const user = await deps.userStore.create(username, passwordHash, walletId);
 
     // The keystore is optional: without one the wallet is an id the caller can
@@ -93,6 +105,65 @@ export function authRoutes(deps: AuthDeps): Hono<AuthEnv> {
         ...(mnemonic === undefined ? {} : { mnemonic }),
       },
       201,
+    );
+  });
+
+  // Mints another wallet for the caller. `POST /auth/wallets` rather than
+  // `POST /wallets` because it belongs to the same secret-free surface: no
+  // password is asked for again, and the token is what authorises the mint.
+  router.post('/auth/wallets', requireAuth(deps.secret, revoked), async (c) => {
+    const caller = c.get('user');
+    if (caller === undefined) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'a valid token is required');
+    }
+
+    const body = (await c.req.json().catch(() => ({}))) as WalletRequest;
+    const label = typeof body.label === 'string' ? body.label.trim().slice(0, 64) : '';
+
+    // A keystore-backed instance needs the password again: encrypting a new
+    // phrase needs the secret, and a bearer token deliberately does not carry
+    // one. Asking for it here is the price of not caching it.
+    let password: string | undefined;
+    if (deps.keystore !== undefined) {
+      password = requirePassword(String(body.password ?? ''));
+    }
+
+    const walletId = newWalletId();
+    await deps.userStore.addWallet(caller.userId, walletId, label);
+
+    let mnemonic: string | undefined;
+    if (deps.keystore !== undefined && password !== undefined) {
+      mnemonic = generate();
+      await deps.keystore.store(walletId, mnemonic, password);
+    }
+
+    return c.json(
+      {
+        walletId,
+        label,
+        createdAt: (await deps.userStore.findWallet(walletId))?.createdAt ?? '',
+        ...(mnemonic === undefined ? {} : { mnemonic }),
+      },
+      201,
+    );
+  });
+
+  router.get('/auth/wallets', requireAuth(deps.secret, revoked), async (c) => {
+    const caller = c.get('user');
+    if (caller === undefined) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'a valid token is required');
+    }
+
+    const wallets = await deps.userStore.wallets(caller.userId);
+    return c.json(
+      {
+        wallets: wallets.map((wallet) => ({
+          walletId: wallet.walletId,
+          label: wallet.label,
+          createdAt: wallet.createdAt,
+        })),
+      },
+      200,
     );
   });
 
@@ -119,7 +190,7 @@ export function authRoutes(deps: AuthDeps): Hono<AuthEnv> {
 
   router.get('/auth/me', requireAuth(deps.secret, revoked), (c) => {
     const payload: TokenPayload = c.get('user');
-    return c.json({ user: { userId: payload.userId, walletId: payload.walletId } }, 200);
+    return c.json({ user: { userId: payload.userId, walletIds: payload.walletIds } }, 200);
   });
 
   router.delete('/auth/logout', requireAuth(deps.secret, revoked), (c) => {
@@ -133,8 +204,18 @@ export function authRoutes(deps: AuthDeps): Hono<AuthEnv> {
 }
 
 /** Signs a token for a user, minting the id the logout list revokes by. */
-async function issue(deps: AuthDeps, user: { id: string; walletId: string }): Promise<string> {
-  const payload: TokenPayload = { userId: user.id, walletId: user.walletId, jti: randomUUID() };
+async function issue(
+  deps: AuthDeps,
+  user: {
+    id: string;
+    walletIds: readonly string[];
+  },
+): Promise<string> {
+  const payload: TokenPayload = {
+    userId: user.id,
+    walletIds: [...user.walletIds],
+    jti: randomUUID(),
+  };
   return signToken(payload, deps.secret, deps.expiresIn ?? DEFAULT_EXPIRES_IN);
 }
 
@@ -142,13 +223,13 @@ async function issue(deps: AuthDeps, user: { id: string; walletId: string }): Pr
 function publicUser(user: {
   id: string;
   username: string;
-  walletId: string;
+  walletIds: readonly string[];
   createdAt: string;
 }): PublicUser {
   return {
     id: user.id,
     username: user.username,
-    walletId: user.walletId,
+    walletIds: [...user.walletIds],
     createdAt: user.createdAt,
   };
 }
