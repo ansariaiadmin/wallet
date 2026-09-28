@@ -300,7 +300,7 @@ short-lived token into a permanent one.
 ## Testing
 
 ```
-pnpm -r test                       # 743 tests: 734 passed, 9 skipped (5 live-RPC + 4 recorded e2e)
+pnpm -r test                       # 752 tests: 743 passed, 9 skipped (5 live-RPC + 4 recorded e2e)
 RUN_E2E=1 pnpm --filter @wallet/api test    # + 4 recorded-fixture e2e tests
 ```
 
