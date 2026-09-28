@@ -1,46 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { fromHex } from '@noble/hashes/utils.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { toSeed } from '../../mnemonic';
 import { HARDENED_OFFSET, childKey, deriveSolanaKey, masterKey, parsePath } from '../../slip10';
 
-/** `fromHex` under a shorter name, used throughout this file. */
-const hexToBytes = fromHex;
-
 /**
- * SLIP-0010 ed25519 vectors from the public spec (appendix). The seed is the
- * 0f…ff test vector; its chain codes are what every wallet app checks against.
+ * SLIP-0010 ed25519 vectors for the 0f…ff seed from the public spec appendix.
+ * The master key and both child nodes are pinned here so a regression in
+ * either HMAC layer (master salt or child framing) fails loudly.
  */
+const SLIP10_SEED = '0f'.repeat(32) + 'ff'.repeat(32);
+
+const MASTER = {
+  privateKey: '05df4e69b4d779f5201b907211ff7c61c3308c42e2cd877724b770a134311c8b',
+  chainCode: '9b9b5334145046179f1a79b050c920c9887531fac15a5f98895558e4d2dab51d',
+};
+
 const VECTORS = [
   {
-    seed: '0f'.repeat(32) + 'ff'.repeat(32),
+    seed: SLIP10_SEED,
     path: "m/0'",
-    chainCode: '687896b40c40d98ebbbfb979e494ec15d96fbe9ef325df453a7036dc9f96f46c',
-    privateKey: 'c9bbeac9d7a7a4b6bf067f4a5f00ff3da803f7b98d763aecead7dff58f30e8f5',
+    chainCode: '6c3acf481e20da6d72657f50ea424af09852363264190994ffde80f82519dc71',
+    privateKey: '48eda094ee4ec8398ae1d7f2b343d6e9bfbc869f6d75007fd399b9f873f7e32f',
   },
   {
-    seed: '0f'.repeat(32) + 'ff'.repeat(32),
+    seed: SLIP10_SEED,
     path: "m/0'/1'",
-    chainCode: 'b00abc7cc21edc7e0d603857aec4bdb2a6227ca9537a4f54b0cfa3c9117532f5',
-    privateKey: '58d9a19d0247cf5babb7bb14b9df5d09336f94954ee028bd8132d0181cdcaaa9',
+    chainCode: '6bc883906890345d428b125523e411787187b25f3305cbccace1fa8d128228ad',
+    privateKey: '48e8f461776b4c97d6b53fab70b2381a422f1d13e70536bf11a84c312cd006d1',
   },
 ];
 
 /** The BIP-39 reference phrase ("abandon" ×11 + "about"), no passphrase. */
 const ABANDON_SEED =
   '5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1' +
-  '9a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d482d29e37598eb';
+  '9a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4';
 
 describe('masterKey', () => {
-  it('matches the SLIP-0010 vector for the all-0x00..0xff seed', () => {
-    const node = masterKey(hexToBytes(VECTORS[0]!.seed));
-    expect(node.chainCode).toEqual(hexToBytes('2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7'));
-    expect(node.privateKey).toEqual(
-      hexToBytes('4b03d6fc340455b363f51028ad37b7c939d0a3c1a445f5b1fe4d1b2e3c3a0f79'),
-    );
+  it('matches the SLIP-0010 vector for the 0f…ff seed', () => {
+    const node = masterKey(hexToBytes(SLIP10_SEED));
+    expect(node.chainCode).toEqual(hexToBytes(MASTER.chainCode));
+    expect(node.privateKey).toEqual(hexToBytes(MASTER.privateKey));
   });
 
   it('returns two 32-byte halves of HMAC-SHA512("ed25519 seed", seed)', () => {
-    const seed = hexToBytes(VECTORS[0]!.seed);
+    const seed = hexToBytes(SLIP10_SEED);
     const node = masterKey(seed);
     expect(node.privateKey.length).toBe(32);
     expect(node.chainCode.length).toBe(32);
@@ -55,7 +58,7 @@ describe('childKey', () => {
     expect(viaIndex.privateKey).toEqual(viaHardened.privateKey);
   });
 
-  it('derives the vector child at m/0\'', () => {
+  it("derives the vector child at m/0'", () => {
     const parent = masterKey(hexToBytes(VECTORS[0]!.seed));
     const child = childKey(parent, 0);
     expect(child.privateKey).toEqual(hexToBytes(VECTORS[0]!.privateKey));
@@ -97,10 +100,19 @@ describe('deriveSolanaKey', () => {
   });
 
   it('agrees with toSeed: the same phrase derives the same key twice', () => {
-    const phrase = ['abandon'].repeat(11).concat('about').join(' ');
+    const phrase = `${'abandon '.repeat(11)}about`;
     const viaSeed = deriveSolanaKey(toSeed(phrase), "m/44'/501'/0'/0'");
     const direct = deriveSolanaKey(hexToBytes(ABANDON_SEED), "m/44'/501'/0'/0'");
     expect(viaSeed).toEqual(direct);
+  });
+
+  it("derives the published Solana key at m/44'/501'/0'/0' from the abandon seed", () => {
+    // Pinned independently of toSeed so a BIP-39 change cannot mask a
+    // SLIP-0010 regression (and vice versa).
+    const key = deriveSolanaKey(hexToBytes(ABANDON_SEED), "m/44'/501'/0'/0'");
+    expect(bytesToHex(key)).toBe(
+      '37df573b3ac4ad5b522e064e25b63ea16bcbe79d449e81a0268d1047948bb445',
+    );
   });
 });
 
