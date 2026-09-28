@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Router, UnknownRouteError } from '@router/router';
+import { Router, UnknownRouteError } from '../../registry';
 
 interface Ctx {
   readonly value: number;

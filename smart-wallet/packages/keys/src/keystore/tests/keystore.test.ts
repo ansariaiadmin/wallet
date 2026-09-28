@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MemoryKeyStore } from '../src/keystore';
-import { KeyStoreError } from '../src/types';
-import { generate } from '../src/mnemonic';
+import { MemoryKeyStore } from '../../keystore';
+import { KeyStoreError } from '../../types';
+import { generate } from '../../mnemonic';
 
 const PASSPHRASE = 'correct horse battery staple';
 const OTHER_PASSPHRASE = 'another secret';

@@ -9,7 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "RUN_INTEGRATION=1 vitest run test/integration",
+    "test:integration": "RUN_INTEGRATION=1 vitest run src/tests/integration",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

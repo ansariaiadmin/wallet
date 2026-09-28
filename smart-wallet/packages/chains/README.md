@@ -86,10 +86,10 @@ pnpm test                 # unit tests against a local mock node (offline)
 pnpm test:integration     # live public testnet RPC (opt-in)
 ```
 
-- `test/unit/` — 41 tests against a local HTTP mock that speaks JSON-RPC and
+- `src/tests/unit/` — 41 tests against a local HTTP mock that speaks JSON-RPC and
   TronGrid REST: balances, token balances, fee estimation, broadcast success and
   rejection, retry/fallback, address validation and the registry.
-- `test/integration/` — read-only checks against public testnet endpoints,
+- `src/tests/integration/` — read-only checks against public testnet endpoints,
   skipped unless `RUN_INTEGRATION=1` is set (public endpoints rate limit and
   change URLs; a live broadcast needs a funded account, which this layer never
   holds).
