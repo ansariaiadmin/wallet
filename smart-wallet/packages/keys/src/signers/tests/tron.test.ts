@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { createTronSigner, recoverTronAddress, transactionDigest } from '../../src/signers/tron';
-import { deriveTron } from '../../src/derive';
-import { KeyStoreError } from '../../src/types';
+import { createTronSigner, recoverTronAddress, transactionDigest } from '../tron';
+import { deriveTron } from '../../derive';
+import { KeyStoreError } from '../../types';
 
 const TEST_MNEMONIC = [
   'abandon',

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { recoverMessageAddress, recoverTransactionAddress } from 'viem';
-import { createEvmSigner, type EvmTxRequest } from '../../src/signers/evm';
-import { deriveEvm } from '../../src/derive';
-import { KeyStoreError } from '../../src/types';
+import { createEvmSigner, type EvmTxRequest } from '../evm';
+import { deriveEvm } from '../../derive';
+import { KeyStoreError } from '../../types';
 
 const TEST_MNEMONIC = [
   'abandon',

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileKeyStore } from '../../src/keystores/file';
-import { KeyStoreError } from '../../src/types';
+import { FileKeyStore } from '../../keystores/file';
+import { KeyStoreError } from '../../types';
 
 const PASSPHRASE = 'correct horse battery staple';
 const WRONG_PASSPHRASE = 'not the passphrase';

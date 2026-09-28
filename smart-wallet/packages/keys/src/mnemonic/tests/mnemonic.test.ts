@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { assertValid, generate, normalize, toSeed, validate } from '../src/mnemonic';
-import { KeyStoreError } from '../src/types';
+import { assertValid, generate, normalize, toSeed, validate } from '../../mnemonic';
+import { KeyStoreError } from '../../types';
 
 /** The BIP-39 reference phrase every vector in this suite is built on. */
 const TEST_MNEMONIC = [

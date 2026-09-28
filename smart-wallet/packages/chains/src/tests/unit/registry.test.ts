@@ -62,7 +62,12 @@ describe('chain registry', () => {
 
   it('never handles private keys', () => {
     const sourceDir = path.join(process.cwd(), 'src');
-    const sources = listFiles(sourceDir).filter((file) => file.endsWith('.ts'));
+    // Connector sources only: the tests directory is excluded (the same way
+    // core's no-private-keys test scans only its builder sources), because the
+    // scan patterns would otherwise match this very test file.
+    const sources = listFiles(sourceDir).filter(
+      (file) => file.endsWith('.ts') && !file.includes(`${path.sep}tests${path.sep}`),
+    );
 
     expect(sources.length).toBeGreaterThan(0);
     for (const file of sources) {

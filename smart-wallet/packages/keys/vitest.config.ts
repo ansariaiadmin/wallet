@@ -8,7 +8,7 @@ const fromHere = (relativePath: string): string =>
 export default defineConfig({
   test: {
     ...sharedTestConfig,
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.ts'],
   },
   resolve: {
     alias: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { decrypt, encrypt, isEncryptedBlob, safeEqual } from '../src/encrypt';
-import { KeyStoreError } from '../src/types';
+import { decrypt, encrypt, isEncryptedBlob, safeEqual } from '../../encrypt';
+import { KeyStoreError } from '../../types';
 
 const PASSWORD = 'correct horse battery staple';
 const SECRET = new TextEncoder().encode(

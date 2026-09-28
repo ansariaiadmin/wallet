@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Keypair, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { createSolanaSigner, keypairFrom } from '../../src/signers/solana';
-import { deriveSolana } from '../../src/derive';
-import { KeyStoreError } from '../../src/types';
+import { createSolanaSigner, keypairFrom } from '../solana';
+import { deriveSolana } from '../../derive';
+import { KeyStoreError } from '../../types';
 
 const TEST_MNEMONIC = [
   'abandon',
