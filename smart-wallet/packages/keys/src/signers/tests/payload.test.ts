@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { recoverTransactionAddress } from 'viem';
 import { serializeTransaction } from 'viem';
 import { Keypair, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { parseTron, signPayload } from '../../src/signers/payload';
-import { deriveEvm, deriveSolana, deriveTron } from '../../src/derive';
-import { KeyStoreError } from '../../src/types';
+import { parseTron, signPayload } from '../payload';
+import { deriveEvm, deriveSolana, deriveTron } from '../../derive';
+import { KeyStoreError } from '../../types';
 
 const TEST_MNEMONIC = [
   'abandon',

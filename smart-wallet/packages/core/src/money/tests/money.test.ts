@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { add, compare, isNegative, isZero, money, subtract } from '@core/money';
-import { CurrencyMismatchError } from '@core/errors';
+import { CurrencyMismatchError } from '../../errors';
 
 describe('money', () => {
   it('adds amounts in the same currency', () => {

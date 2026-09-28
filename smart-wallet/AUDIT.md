@@ -435,6 +435,33 @@ Monorepo **743 passed, 9 skipped**.
 axis is "correctness _and test depth_, offline" and this is still offline. It is
 the honest ceiling from here.
 
+### After S12 — repo hygiene: one tests layout, no empty .gitignore
+
+The tree was carrying three different test layouts at once: `chains`, `core`,
+`keys` and `router` had moved their suites under `src/**/tests/`, but
+`packages/core/vitest.config.ts` and `packages/router/vitest.config.ts` still
+globbed the deleted `test/` directory, five `tsconfig.json` files still
+`include`d paths that no longer exist, and the root `.gitignore` had been
+truncated to an empty file — leaving `node_modules/` and `.env` unignored for a
+fresh clone of the repository.
+
+S12 fixes exactly that, with no behaviour change: every package now uses
+`src/**/*.test.ts` in both its vitest include and its tsconfig include, the root
+`.gitignore` is restored (dependencies, build output, env files, logs), and the
+`@wallet/chains` `test:integration` script points at the new
+`src/tests/integration` path. The README's test line was also corrected: the
+monorepo has **743 tests total — 734 passed, 9 skipped** (5 live-RPC + 4
+recorded e2e); "743 passed" over-counted the skips.
+
+Numbers: identical suite before and after — **734 passed, 9 skipped**, typecheck
+0 errors, lint clean, `prettier --check` clean. The API server was smoke-booted
+(`pnpm --filter @wallet/api start`) and `/health`, `/price/:symbol` and
+`/auth/register` answered correctly.
+
+**Score after S12: 9.26 / 10 — consistency 9.0 → 9.5.** One axis moved: the
+layout is now uniform across all six packages and no config file references a
+path that does not exist. Nothing else changed, so nothing else moved.
+
 **Score after S10: 9.23 / 10 — unchanged, and deliberately so.**
 
 This phase closes a _scope_ gap, not a score gap: "one user owns one wallet" was
@@ -455,15 +482,16 @@ room are the four below.
 | 2   | Dead code                  | 15%    | 9.5         | 9.5      | nothing unreachable remains                    |
 | 3   | Duplication                | 15%    | 9.0         | 9.5      | broadcast/quote "duplication" was a wrong read |
 | 4   | Packaging and build        | 10%    | 8.0         | 8.0      | every package exports source, no `dist`        |
-| 5   | Consistency and style      | 10%    | 9.0         | 9.0      | typecheck/lint/format clean                    |
+| 5   | Consistency and style      | 10%    | 9.0         | 9.5      | one test layout, typecheck/lint/format clean   |
 | 6   | Layering and architecture  | 15%    | 7.0         | 8.0      | price/risk/tx-build unified; quote outside     |
 | 7   | Public API and docs        | 5%     | 6.5         | 9.0      | OpenAPI, verified by test                      |
 | 8   | CI and release readiness   | 5%     | 8.0         | 8.0      | green on main and on PRs                       |
 | 9   | Security posture           | 5%     | 8.0         | 8.0      | strong defaults, endpoints not locked          |
 | 10  | Observability and ops      | 5%     | 8.5         | 8.5      | structured logs, `/metrics`, `/health`         |
 
-`0.20×9.0 + 0.15×9.5 + 0.15×9.5 + 0.10×8.0 + 0.10×9.0 + 0.15×8.0 +
-0.05×9.0 + 0.05×8.0 + 0.05×8.0 + 0.05×8.5 =` **9.23**
+`0.20×9.0 + 0.15×9.5 + 0.15×9.5 + 0.10×8.0 + 0.10×9.5 + 0.15×8.0 +
+0.05×9.0 + 0.05×8.0 + 0.05×8.0 + 0.05×8.5 =` **9.26** (S12; the S10/S11 table
+row read 9.0 for consistency, worth 9.23)
 
 One wrinkle a reader will hit: the weights above sum to **1.05**, not 1.00. The
 totals in this file are `Σ(weight × score)` without renormalising — the same

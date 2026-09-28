@@ -11,10 +11,10 @@ import {
   pathFor,
   solanaAddress,
   tronAddress,
-} from '../src/derive';
-import { deriveSolanaKey } from '../src/slip10';
-import { toSeed } from '../src/mnemonic';
-import { KeyStoreError } from '../src/types';
+} from '../../derive';
+import { deriveSolanaKey } from '../../slip10';
+import { toSeed } from '../../mnemonic';
+import { KeyStoreError } from '../../types';
 
 /** The BIP-39 reference phrase; its BIP-44 vectors are public. */
 const TEST_MNEMONIC = [
