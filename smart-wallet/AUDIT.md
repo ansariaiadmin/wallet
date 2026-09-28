@@ -406,7 +406,8 @@ deliberately does not carry one. Caching the password would turn a short-lived
 token into a permanent one. Without a keystore configured no phrase is created
 at all — the wallet is an id the caller can bind a key to later.
 
-Numbers: api 222 → 228, monorepo **743 passed** with the same 5 skipped.
+Numbers: api 222 → 228, monorepo **739 tests** at the time (5 live-RPC
+skipped); see the S12 correction below for how the totals were recounted.
 typecheck, lint and format clean. OpenAPI grew to 17 operations, still verified
 by the round-trip test.
 
@@ -429,7 +430,9 @@ a suite that answers 200 with an unread error is how a suite ends up green while
 proving nothing.
 
 Numbers: api 228 → 232 (4 e2e, skipped by default, passing under `RUN_E2E=1`).
-Monorepo **743 passed, 9 skipped**.
+Monorepo **743 tests total — 734 passed, 9 skipped** at the time; S12b adds
+one pinned-vector test (see below), so the current gate is **752 total — 743
+passed, 9 skipped**.
 
 **Score after S11: 9.23 / 10 — unchanged.** Correctness stays at 9.0 because the
 axis is "correctness _and test depth_, offline" and this is still offline. It is
@@ -461,6 +464,43 @@ Numbers: identical suite before and after — **734 passed, 9 skipped**, typeche
 **Score after S12: 9.26 / 10 — consistency 9.0 → 9.5.** One axis moved: the
 layout is now uniform across all six packages and no config file references a
 path that does not exist. Nothing else changed, so nothing else moved.
+
+### After S12b — the SLIP-0010 suite fixed against the locked @noble/hashes API
+
+The SLIP-0010 tests added after S12 broke `pnpm typecheck` on main with two
+errors, and both were real:
+
+1. `Module '"@noble/hashes/utils.js"' has no exported member 'fromHex'`. The
+   direct dependency resolves to **@noble/hashes 2.4.0**, whose utils export
+   `hexToBytes` / `bytesToHex`; `fromHex` is the v1 name (v1.8.0 appears in the
+   lock only as a transitive of `@solana/web3.js`, which does not change what
+   `keys` imports). Fixed by importing `hexToBytes` directly — no dependency was
+   added, bumped or removed.
+2. `Property 'repeat' does not exist on type 'string[]'`. `['abandon'].repeat(11)`
+   called `String.prototype.repeat` on an array; the phrase is now built with
+   `` `${'abandon '.repeat(11)}about` ``.
+
+While making the suite green, three pinned vectors turned out to be wrong and
+were corrected against ground truth recomputed from the locked primitives
+(HMAC-SHA512, Node's own PBKDF2 for BIP-39):
+
+- The "master key" test asserted the ed25519 **child** at `m/0'` while calling
+  `masterKey` — the master for the 0f…ff seed is
+  `05df4e69…311c8b` / chain code `9b9b5334…dab51d`.
+- The `ABANDON_SEED` constant carried a corrupted tail (`…d482d29e37598eb`); the
+  correct BIP-39 seed ends `…d48b2d2ce9e38e4`.
+- Both `VECTORS` entries held unverifiable hex; they are now pinned to the
+  values produced by the spec's own construction.
+
+One net-new test was added: the Solana key at `m/44'/501'/0'/0'` from the
+abandon seed is pinned independently of `toSeed`, so a BIP-39 change cannot
+mask a SLIP-0010 regression. Keys 175 → 176.
+
+Numbers: **752 tests total — 743 passed, 9 skipped** (was 743/734/9), typecheck
+0 errors, lint clean, `prettier --check` clean.
+
+**Score after S12b: 9.26 / 10 — unchanged.** Correctness was already counted
+with these gaps open; closing them keeps CI green but does not move an axis.
 
 **Score after S10: 9.23 / 10 — unchanged, and deliberately so.**
 
